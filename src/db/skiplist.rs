@@ -91,6 +91,9 @@ impl<Key> SkipList<Key> {
     pub fn insert(&mut self, key: Key) {
         let mut prev = [std::ptr::null_mut(); MAX_HEIGHT];
         let x = self.find_greater_or_equal(&key, Some(&mut prev));
+        // don't allow duplicate insertion
+        assert!(x.is_null() || !self.equal(unsafe { &(*x).key }, &key));
+
         let height = self.random_height();
         if height > self.get_max_height() {
             for i in self.get_max_height()..height {
