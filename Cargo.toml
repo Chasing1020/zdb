@@ -9,3 +9,4 @@ license = "Apache-2.0"
 
 [dependencies]
 bytes = "1.5.0"
+rand = "0.8.5"
