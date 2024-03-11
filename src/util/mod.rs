@@ -1,2 +1,2 @@
-pub mod comparator;
 pub mod arena;
+pub mod comparator;

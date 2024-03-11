@@ -1,10 +1,10 @@
 use crate::util::arena::Arena;
-use crate::util::comparator::Comparator;
+// use crate::util::comparator::Comparator;
 use rand::{rngs::ThreadRng, thread_rng, Rng};
 
 use std::{
     cell::RefCell,
-    cmp::Ordering::Less,
+    cmp::Ordering::{Less, Equal},
     mem::size_of,
     ptr,
     rc::Rc,
@@ -69,23 +69,23 @@ impl<Key> Node<Key> {
     }
 }
 
-pub struct SkipList<Key> {
-    pub comparator: Rc<dyn Comparator<Key>>,
+pub struct SkipList<Key: Ord> {
+    // pub comparator: Rc<dyn Comparator<Key>>,
     pub arena: RefCell<Arena>,
-    pub max_height: AtomicUsize,
-    pub head: *mut Node<Key>,
-    pub rng: RefCell<ThreadRng>,
+    max_height: AtomicUsize,
+    head: *mut Node<Key>,
+    rng: RefCell<ThreadRng>,
 }
 
-impl<Key> SkipList<Key> {
+impl<Key: Ord> SkipList<Key> {
     pub fn new(
-        comparator: Rc<dyn Comparator<Key>>,
+        // comparator: Rc<dyn Comparator<Key>>,
         arena: RefCell<Arena>,
         key: Key,
     ) -> SkipList<Key> {
         let head = Node::new_ptr(key, MAX_HEIGHT, &arena);
         SkipList {
-            comparator,
+            // comparator,
             arena,
             max_height: AtomicUsize::new(1),
             head,
@@ -154,7 +154,7 @@ impl<Key> SkipList<Key> {
 
         loop {
             let next = unsafe { (*x).next(level) };
-            if !next.is_null() && self.comparator.compare(unsafe { &(*next).key }, key) == Less {
+            if !next.is_null() && unsafe { &(*next).key }.cmp(key) == Less {
                 x = next;
             } else {
                 if level == 0 {
@@ -190,7 +190,7 @@ impl<Key> SkipList<Key> {
 
     #[inline]
     fn key_is_after_node(&self, key: &Key, n: *mut Node<Key>) -> bool {
-        !n.is_null() && self.comparator.compare(unsafe { &(*n).key }, key) == Less
+        !n.is_null() && unsafe { &(*n).key }.cmp(key) == Less
     }
 
     #[inline]
@@ -207,16 +207,16 @@ impl<Key> SkipList<Key> {
 
     #[inline]
     fn equal(&self, a: &Key, b: &Key) -> bool {
-        self.comparator.compare(a, b) == std::cmp::Ordering::Equal
+        a.cmp(b) == Equal
     }
 }
 
-pub struct SkipListIterator<K> {
+pub struct SkipListIterator<K: Ord> {
     skip_list: Arc<SkipList<K>>,
     node: *const Node<K>,
 }
 
-impl<K> SkipListIterator<K> {
+impl<K: Ord> SkipListIterator<K> {
     pub fn new(skip_list: Arc<SkipList<K>>) -> Self {
         SkipListIterator {
             skip_list,
@@ -296,22 +296,22 @@ mod tests {
 
     struct U64Comparator;
 
-    impl Comparator<u64> for U64Comparator {
-        fn compare(&self, left: &u64, right: &u64) -> Ordering {
-            left.cmp(right)
-        }
+    // impl Comparator<u64> for U64Comparator {
+    //     fn compare(&self, left: &u64, right: &u64) -> Ordering {
+    //         left.cmp(right)
+    //     }
 
-        fn name(&self) -> &'static str {
-            "skiplist test comparator"
-        }
+    //     fn name(&self) -> &'static str {
+    //         "skiplist test comparator"
+    //     }
 
-        fn find_shortest_separator(&self, _start: &mut u64, _limit: &u64) {}
-        fn find_short_successor(&self, _key: &mut u64) {}
-    }
+    //     fn find_shortest_separator(&self, _start: &mut u64, _limit: &u64) {}
+    //     fn find_short_successor(&self, _key: &mut u64) {}
+    // }
 
     #[test]
     fn test_skiplist_empty() {
-        let skiplist = SkipList::new(Rc::new(U64Comparator), RefCell::new(Arena::new()), 0);
+        let skiplist = SkipList::new(RefCell::new(Arena::new()), 0);
         assert!(!skiplist.contains(&1));
         let mut skip_iter = SkipListIterator::new(Arc::new(skiplist));
         assert!(!skip_iter.valid());
@@ -323,7 +323,7 @@ mod tests {
 
     #[test]
     fn test_skiplist_insert() {
-        let skiplist = SkipList::new(Rc::new(U64Comparator), RefCell::new(Arena::new()), 0);
+        let skiplist = SkipList::new(RefCell::new(Arena::new()), 0);
         skiplist.insert(1);
         skiplist.insert(4);
         skiplist.insert(7);
@@ -336,11 +336,7 @@ mod tests {
     #[test]
     fn test_skiplist_insert_and_lookup() {
         let mut set = BTreeSet::new();
-        let list = Arc::new(SkipList::new(
-            Rc::new(U64Comparator),
-            RefCell::new(Arena::new()),
-            0,
-        ));
+        let list = Arc::new(SkipList::new(RefCell::new(Arena::new()), 0));
         let mut rng = thread_rng();
         const N: u64 = 2000;
         const R: u64 = 5000;
@@ -426,8 +422,8 @@ mod tests {
     impl ConcurrentTest {
         pub fn new() -> Self {
             let arena = RefCell::new(Arena::new());
-            let comparator = Rc::new(U64Comparator {});
-            let list = Arc::new(SkipList::new(comparator, arena, 0));
+            // let comparator = Rc::new(U64Comparator {});
+            let list = Arc::new(SkipList::new(arena, 0));
             let current = State::new();
             ConcurrentTest { current, list }
         }

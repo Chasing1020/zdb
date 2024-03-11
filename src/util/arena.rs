@@ -43,7 +43,7 @@ impl Arena {
         let needed = bytes + slop;
         if needed <= self.bytes_remaining {
             let result = unsafe { self.alloc_ptr.add(slop) };
-            self.alloc_ptr= unsafe { self.alloc_ptr.add(needed) };
+            self.alloc_ptr = unsafe { self.alloc_ptr.add(needed) };
             self.bytes_remaining -= needed;
             result
         } else {
