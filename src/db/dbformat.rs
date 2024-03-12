@@ -267,6 +267,24 @@ impl Comparator for InternalKeyComparator {
 // /// MemTableKey = KeyLen(Varint32) + InteralKey + ValLen(Varint32) + Value
 // pub struct MemtableKey<'a>(&'a [u8]);
 
+
+// A helper class useful for DBImpl::Get()
+pub struct LookupKey {
+    // We construct a u8 buf of the form:
+    //    klength  varint32
+    //    userkey  char[klength]          <-- user_key_start
+    //    tag      uint64
+    //                                    <-- end
+    // The array is a suitable MemTable key.
+    // The suffix starting with "userkey" can be used as an InternalKey.
+    user_key_start: usize,
+    end: usize,
+    // if long_key_buf is none, that means the key was stored in short_key_buf
+    long_key_buf: Option<Vec<u8>>,
+    short_key_buf: [u8; 200],
+}
+
+
 #[cfg(test)]
 mod tests {
     use std::rc::Rc;
