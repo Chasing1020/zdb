@@ -2,10 +2,14 @@ use std::{cell::RefCell, ptr::null, rc::Rc, sync::Arc};
 
 use crate::util::arena::Arena;
 
-// use super::{
-//     dbformat::{InternalKey, ValueType},
-//     skiplist::SkipList,
-// };
+use super::skiplist::SkipList;
+
+
+
+pub struct MemTable<K: Ord> {
+    arena: Rc<RefCell<Arena>>,
+    table: Arc<SkipList<K>>,
+}
 
 // pub struct MemTable<'a> {
 //     table: Arc<SkipList<InternalKey<'a>>>,
