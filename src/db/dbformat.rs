@@ -35,6 +35,12 @@ impl<T: AsRef<[u8]>> Debug for UserKey<T> {
     }
 }
 
+impl<T: AsRef<[u8]>> Display for UserKey<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "UserKey: {:?}", self.0.as_ref())
+    }
+}
+
 impl<T: AsRef<[u8]>> AsRef<[u8]> for UserKey<T> {
     fn as_ref(&self) -> &[u8] {
         self.0.as_ref()
@@ -62,14 +68,10 @@ impl<T: AsRef<[u8]>> Borrow<[u8]> for UserKey<T> {
 }
 
 impl<T: AsRef<[u8]>> UserKey<T> {
+    #[inline]
     pub fn len(&self) -> usize {
         self.0.as_ref().len()
     }
-}
-
-pub fn next_key_no_alloc(key: &[u8]) -> Option<(&[u8], u8)> {
-    let pos = key.iter().rposition(|b| *b != 0xff)?;
-    Some((&key[..pos], key[pos] + 1))
 }
 
 pub struct DefaultComparator;
@@ -150,10 +152,12 @@ impl<T: AsRef<[u8]>> InternalKey<T> {
         }
     }
 
+    #[inline]
     pub fn len(&self) -> usize {
         self.user_key.len() + INTERAL_SUFFIX_LEN
     }
 
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.user_key.as_ref().is_empty()
     }
