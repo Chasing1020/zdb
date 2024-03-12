@@ -1,12 +1,11 @@
 use std::{cell::RefCell, ptr::null, rc::Rc, sync::Arc};
 
+use crate::util::arena::Arena;
 
-use crate::util::{arena::Arena};
-
-use super::{
-    dbformat::{InternalKey, ValueType},
-    skiplist::SkipList,
-};
+// use super::{
+//     dbformat::{InternalKey, ValueType},
+//     skiplist::SkipList,
+// };
 
 // pub struct MemTable<'a> {
 //     table: Arc<SkipList<InternalKey<'a>>>,
@@ -24,7 +23,6 @@ use super::{
 //     }
 
 //     pub fn add(&self, seq: u64, vt: ValueType, key: BytesMut, value: BytesMut) {
-
 
 //     }
 // }

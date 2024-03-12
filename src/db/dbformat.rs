@@ -1,38 +1,95 @@
-use std::cmp::Ordering::{Equal, Less};
+use num_enum::FromPrimitive;
+use std::{
+    borrow::Borrow,
+    cmp::Ordering::{Equal, Less},
+    convert::AsRef,
+    fmt::{Debug, Display, Formatter},
+    mem,
+    ops::{Deref, DerefMut},
+    rc::Rc,
+};
 
-use bytes::{BufMut, BytesMut};
+use bytes::{buf::Buf, BufMut};
 
-// use crate::util::comparator::{ByteWiseComparator, Comparator};
+use crate::util::comparator::{self, Comparator};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub const MAX_SEQUENCE_NUMBER: u64 = (0x1u64 << 56) - 1;
+pub const INTERAL_SUFFIX_LEN: usize = mem::size_of::<u64>();
+
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default, FromPrimitive)]
 pub enum ValueType {
     Deletion = 0x0,
+    #[default]
     Value = 0x1,
 }
 
-const MAX_SEQUENCE_NUMBER: u64 = (0x1u64 << 56) - 1;
-
 /// A UserKey is the actual key supplied by the calling application, without any internal
 /// decorations.
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub struct UserKey<'a>(&'a [u8]);
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+pub struct UserKey<T: AsRef<[u8]>>(pub T);
 
-impl<'a> UserKey<'a> {
-    pub fn new(key: &'a [u8]) -> UserKey<'a> {
-        UserKey(key)
+impl<T: AsRef<[u8]>> Debug for UserKey<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "UserKey: {:?}", self.0.as_ref())
+    }
+}
+
+impl<T: AsRef<[u8]>> AsRef<[u8]> for UserKey<T> {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
+impl<T: AsRef<[u8]>> Deref for UserKey<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T: AsRef<[u8]>> DerefMut for UserKey<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl<T: AsRef<[u8]>> Borrow<[u8]> for UserKey<T> {
+    fn borrow(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
+impl<T: AsRef<[u8]>> UserKey<T> {
+    pub fn len(&self) -> usize {
+        self.0.as_ref().len()
+    }
+}
+
+pub fn next_key_no_alloc(key: &[u8]) -> Option<(&[u8], u8)> {
+    let pos = key.iter().rposition(|b| *b != 0xff)?;
+    Some((&key[..pos], key[pos] + 1))
+}
+
+pub struct DefaultComparator;
+
+impl Comparator for DefaultComparator {
+    fn cmp(&self, a: &[u8], b: &[u8]) -> std::cmp::Ordering {
+        a.cmp(b)
     }
 
-    // Find the shortest separator string for a and b, i.e., a string x such that a < x < b.
-    pub fn find_shortest_separator(start: &UserKey, limit: &UserKey) -> Vec<u8> {
-        let min_length = std::cmp::min(start.0.len(), limit.0.len());
+    // Find the shortest string x, such that a < x < b
+    fn find_shortest_separator(&self, a: &[u8], b: &[u8]) -> Vec<u8> {
+        let min_length = std::cmp::min(a.len(), b.len());
         let mut diff_index = 0;
-        while diff_index < min_length && start.0[diff_index] == limit.0[diff_index] {
+        while diff_index < min_length && a[diff_index] == b[diff_index] {
             diff_index += 1;
         }
-        let mut tmp = start.0.to_vec();
+        let mut tmp = a.to_vec();
         if diff_index < min_length {
-            let diff_byte = start.0[diff_index];
-            if diff_byte < 0xff && diff_byte + 1 < limit.0[diff_index] {
+            let diff_byte = a[diff_index];
+            if diff_byte < 0xff && diff_byte + 1 < b[diff_index] {
                 tmp[diff_index] = diff_byte + 1;
                 tmp = tmp[..diff_index + 1].to_vec();
             }
@@ -40,13 +97,13 @@ impl<'a> UserKey<'a> {
         tmp
     }
 
-    // Find the shortest string x, such that x > key
-    pub fn find_short_successor(key: &UserKey) -> Vec<u8> {
-        let mut tmp = key.0.to_vec();
+    fn find_short_successor(&self, key: &[u8]) -> Vec<u8> {
+        let mut tmp = key.to_vec();
         for i in 0..tmp.len() {
-            if tmp[i] != u8::max_value() {
+            if key[i] != u8::max_value() {
                 tmp[i] += 1;
-                return tmp.into_iter().take(i + 1).collect();
+                tmp.truncate(i+1);
+                return tmp;
             }
         }
         tmp
@@ -57,167 +114,159 @@ impl<'a> UserKey<'a> {
 /// length specification. This type is used as item type of MemtableIterator, and as the key
 /// type of tables.
 /// InteralKey = UserKey + SeqNumber(7B) + Type(1B)
-#[derive(PartialEq, Eq, PartialOrd, Debug)]
-pub struct InternalKey<'a>(&'a [u8]);
+#[derive(PartialEq, Eq, Hash, Default)]
+pub struct InternalKey<T: AsRef<[u8]>> {
+    pub user_key: UserKey<T>,
+    pub seq: u64,
+    pub vt: ValueType,
+}
 
-impl<'a> InternalKey<'a> {
-    pub fn new(mut key: Vec<u8>, seq: u64, vt: ValueType) -> Vec<u8> {
-        key.put_u64((seq << 8) | vt as u64);
-        key.to_vec()
+impl<T: AsRef<[u8]>> Display for InternalKey<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "InternalKey: {:?} {:?} {:?}",
+            self.user_key, self.seq, self.vt
+        )
     }
+}
 
-    pub fn user_key(&self) -> UserKey {
-        UserKey(&self.0[..self.0.len() - 8])
+impl<T: AsRef<[u8]>> Debug for InternalKey<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "InternalKey: {:?} {:?} {:?}",
+            self.user_key, self.seq, self.vt
+        )
     }
+}
 
-    pub fn seq(&self) -> u64 {
-        let mut seq = [0u8; 8];
-        seq.copy_from_slice(&self.0[self.0.len() - 8..]);
-        u64::from_be_bytes(seq) >> 8
-    }
-
-    pub fn value_type(&self) -> ValueType {
-        match self.0[self.0.len() - 1] {
-            0 => ValueType::Deletion,
-            1 => ValueType::Value,
-            _ => panic!("Invalid value type"),
+impl<T: AsRef<[u8]>> InternalKey<T> {
+    pub fn new(user_key: T, seq: u64, vt: ValueType) -> Self {
+        InternalKey {
+            user_key: UserKey(user_key),
+            seq,
+            vt,
         }
     }
 
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.user_key.len() + INTERAL_SUFFIX_LEN
     }
 
-    pub fn find_shortest_separator(a: &InternalKey, b: &InternalKey) -> Vec<u8> {
-        let sep = UserKey::find_shortest_separator(&a.user_key(), &b.user_key());
-        if sep.len() < a.user_key().0.len() && a.user_key().cmp(&UserKey(sep.as_ref())) == Less {
-            return InternalKey::new(sep, MAX_SEQUENCE_NUMBER, ValueType::Value);
-        }
-        a.0.to_vec()
+    pub fn is_empty(&self) -> bool {
+        self.user_key.as_ref().is_empty()
     }
 
-    pub fn find_short_successor(key: &InternalKey) -> Vec<u8> {
-        let tmp = key.user_key().0;
-        let succ = UserKey::find_short_successor(&UserKey(tmp));
-        if succ.len() < key.user_key().0.len()
-            && key.user_key().cmp(&&UserKey(succ.as_ref())) == Less
-        {
-            return InternalKey::new(succ, MAX_SEQUENCE_NUMBER, ValueType::Value);
-        }
-        key.0.to_vec()
+    pub fn encode(&self) -> Vec<u8> {
+        let mut ik = self.user_key.as_ref().to_vec();
+        ik.put_u64((self.seq << 8) | self.vt as u64);
+        ik
+    }
+
+    pub fn encode_into(&self, buf: &mut impl BufMut) {
+        buf.put_slice(self.user_key.as_ref());
+        buf.put_u64((self.seq << 8) | self.vt as u64);
     }
 }
 
-impl Ord for InternalKey<'_> {
+impl<'a> InternalKey<&'a [u8]> {
+    pub fn decode(slice: &'a [u8]) -> Self {
+        let s = slice.as_ref();
+        let suffix = (&s[s.len() - INTERAL_SUFFIX_LEN..]).get_u64();
+
+        Self {
+            user_key: UserKey(&s[..s.len() - INTERAL_SUFFIX_LEN]),
+            seq: suffix >> 8,
+            vt: ValueType::from((suffix & 0xff) as u8),
+        }
+    }
+}
+
+impl<T: AsRef<[u8]> + Ord + Eq> Ord for InternalKey<T> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        match self.user_key().cmp(&other.user_key()) {
-            Equal => other.seq().cmp(&self.seq()),
-            ord => ord,
+        self.user_key
+            .cmp(&other.user_key)
+            .then(other.seq.cmp(&self.seq))
+    }
+}
+
+impl<T: AsRef<[u8]> + Ord + Eq> PartialOrd for InternalKey<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+
+pub struct InternalKeyComparator {
+    pub comparator: Rc<Box<dyn Comparator>>,
+}
+
+impl InternalKeyComparator {
+    pub fn new(comparator: Box<dyn Comparator>) -> Self {
+        InternalKeyComparator {
+            comparator: Rc::new(comparator),
         }
     }
 }
 
-/// A MemtableKey consists of the following elements: [keylen, key, tag, (vallen, value)] where
-/// keylen is a varint32 encoding the length of key+tag. tag is a fixed 8 bytes segment encoding
-/// the entry type and the sequence number. vallen and value are optional components at the end.
-/// MemTableKey = KeyLen(Varint32) + InteralKey + ValLen(Varint32) + Value
-pub struct MemtableKey<'a>(&'a [u8]);
+impl Default for InternalKeyComparator {
+    fn default() -> Self {
+        InternalKeyComparator {
+            comparator: Rc::new(Box::new(DefaultComparator)),
+        }
+    }
+}
 
-// pub struct InternalKeyComparator {
-//     user_comparator: ByteWiseComparator,
-// }
+impl Comparator for InternalKeyComparator {
+    fn cmp(&self, a: &[u8], b: &[u8]) -> std::cmp::Ordering {
+        let a = InternalKey::decode(a);
+        let b = InternalKey::decode(b);
 
-// impl InternalKeyComparator {
-//     fn new(user_comparator: ByteWiseComparator) -> InternalKeyComparator {
-//         InternalKeyComparator { user_comparator }
-//     }
+        self.comparator
+            .cmp(&a.user_key, &b.user_key)
+            .then(b.seq.cmp(&a.seq))
+    }
 
-//     fn user_comparator(&self) -> ByteWiseComparator {
-//         self.user_comparator
-//     }
-// }
+    fn find_shortest_separator(&self, from: &[u8], to: &[u8]) -> Vec<u8> {
+        let ik_from = InternalKey::decode(from);
+        let ik_to = InternalKey::decode(to);
 
-// impl Comparator<InternalKey<'_>> for InternalKeyComparator {
-//     fn compare<'a, 'b>(&self, a: &'a InternalKey, b: &'b InternalKey) -> std::cmp::Ordering {
-//         match a[..a.len() - 8].cmp(&b[..b.len() - 8]) {
-//             std::cmp::Ordering::Equal => b[b.len() - 8..b.len()].cmp(&a[a.len() - 8..a.len()]),
-//             ord => ord,
-//         }
-//     }
+        let sep = self
+            .comparator
+            .find_shortest_separator(&ik_from.user_key, &ik_to.user_key);
+        if sep.len() < ik_from.user_key.len()
+            && self.comparator.cmp(from, &sep) == Less
+        {
+            InternalKey::new(&sep, MAX_SEQUENCE_NUMBER, ValueType::Value).encode()
+        } else {
+            InternalKey::new(ik_from.user_key, ik_from.seq, ik_from.vt).encode()
+        }
+    }
 
-//     fn name(&self) -> &str {
-//         "leveldb.InternalKeyComparator"
-//     }
+    fn find_short_successor(&self, key: &[u8]) -> Vec<u8> {
+        let ik = InternalKey::decode(key);
+        let mut tmp = self.comparator.find_short_successor(&ik.user_key);
+        if tmp.len() < ik.user_key.len() {
+            tmp.put_u64(MAX_SEQUENCE_NUMBER << 8 | ValueType::Value as u64);
+            return tmp;
+        }
+        ik.encode()
+    }
+}
 
-// fn find_shortest_separator(&self, start: &mut InternalKey, limit: &InternalKey) {
-//     let user_start = &start[..start.len() - 8];
-//     let user_limit = &limit[..limit.len() - 8];
 
-//     let mut tmp = user_start.clone();
-//     self.user_comparator
-//         .find_shortest_separator(&mut tmp, &limit.key);
-//     if tmp.len() < user_start.len()
-//         && self.compare(
-//             start,
-//             &InternalKey::new(tmp.clone(), MAX_SEQUENCE_NUMBER, ValueType::Value),
-//         ) == std::cmp::Ordering::Less
-//     {
-//         user_start = tmp;
-//         start.seq = MAX_SEQUENCE_NUMBER;
-//         start.vt = ValueType::Value;
-//     }
-// }
 
-// fn find_short_successor(&self, key: &mut InternalKey) {
-//     let mut tmp = key.key.clone();
-//     self.user_comparator.find_short_successor(&mut tmp);
-//     if tmp.len() < key.key.len()
-//         && self.compare(
-//             key,
-//             &InternalKey::new(tmp.clone(), MAX_SEQUENCE_NUMBER, ValueType::Value),
-//         ) == std::cmp::Ordering::Less
-//     {
-//         key.key = tmp;
-//         key.seq = MAX_SEQUENCE_NUMBER;
-//         key.vt = ValueType::Value;
-//     }
-// }
-// }
-
-// fn find_shortest_separator(start: &InternalKey, limit: &InternalKey) -> Vec<u8> {
-//     let user_start = start.user_key();
-//     let user_limit = limit.user_key();
-
-//     let mut tmp = find_user_key_shortest_separator(&user_start, &limit.key);
-//     if tmp.len() < user_start.len()
-//         && self.compare(
-//             start,
-//             &InternalKey::new(tmp.clone(), MAX_SEQUENCE_NUMBER, ValueType::Value),
-//         ) == std::cmp::Ordering::Less
-//     {
-//         user_start = tmp;
-//         start.seq = MAX_SEQUENCE_NUMBER;
-//         start.vt = ValueType::Value;
-//     }
-// }
-
-// fn find_short_successor(key: &mut InternalKey) {
-//     let mut tmp = key.key.clone();
-//     self.user_comparator.find_short_successor(&mut tmp);
-//     if tmp.len() < key.key.len()
-//         && self.compare(
-//             key,
-//             &InternalKey::new(tmp.clone(), MAX_SEQUENCE_NUMBER, ValueType::Value),
-//         ) == std::cmp::Ordering::Less
-//     {
-//         key.key = tmp;
-//         key.seq = MAX_SEQUENCE_NUMBER;
-//         key.vt = ValueType::Value;
-//     }
-// }
+// /// A MemtableKey consists of the following elements: [keylen, key, tag, (vallen, value)] where
+// /// keylen is a varint32 encoding the length of key+tag. tag is a fixed 8 bytes segment encoding
+// /// the entry type and the sequence number. vallen and value are optional components at the end.
+// /// MemTableKey = KeyLen(Varint32) + InteralKey + ValLen(Varint32) + Value
+// pub struct MemtableKey<'a>(&'a [u8]);
 
 #[cfg(test)]
 mod tests {
+    use std::rc::Rc;
+
     use super::*;
 
     #[test]
@@ -246,23 +295,23 @@ mod tests {
         ];
 
         for t in tests {
-            let start = InternalKey::new(Vec::from(t[0].0), t[0].1, t[0].2);
-            let limit = InternalKey::new(Vec::from(t[1].0), t[1].1, t[1].2);
-            let res = InternalKey::find_shortest_separator(
-                &InternalKey(&start.as_ref()),
-                &InternalKey(&limit.as_ref()),
+            let start = InternalKey::new(Vec::from(t[0].0), t[0].1, t[0].2).encode();
+            let limit = InternalKey::new(Vec::from(t[1].0), t[1].1, t[1].2).encode();
+            let res = InternalKeyComparator::default().find_shortest_separator(&start, &limit);
+            assert_eq!(
+                res,
+                InternalKey::new(Vec::from(t[2].0), t[2].1, t[2].2).encode()
             );
-            assert_eq!(res, InternalKey::new(Vec::from(t[2].0), t[2].1, t[2].2));
         }
     }
 
     #[test]
     fn test_intetnal_key_short_successor() {
-        let ik = InternalKey::new(Vec::from("foo"), 100, ValueType::Value);
-        let res = InternalKey::find_short_successor(&InternalKey(ik.as_ref()));
+        let ik = InternalKey::new(Vec::from("foo"), 100, ValueType::Value).encode();
+        let res = InternalKeyComparator::default().find_short_successor(&ik);
         assert_eq!(
             res,
-            InternalKey::new(Vec::from("g"), MAX_SEQUENCE_NUMBER, ValueType::Value)
+            InternalKey::new(Vec::from("g"), MAX_SEQUENCE_NUMBER, ValueType::Value).encode()
         );
     }
 }

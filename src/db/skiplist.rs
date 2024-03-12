@@ -1,10 +1,10 @@
 use crate::util::arena::Arena;
-// use crate::util::comparator::Comparator;
 use rand::{rngs::ThreadRng, thread_rng, Rng};
 
 use std::{
     cell::RefCell,
-    cmp::Ordering::{Less, Equal},
+    cmp::Ordering::{Equal, Less},
+    hash::Hasher,
     mem::size_of,
     ptr,
     rc::Rc,
@@ -17,21 +17,21 @@ use std::{
 
 const MAX_HEIGHT: usize = 12;
 
-pub struct Node<Key> {
-    pub key: Key,
-    pub nexts: *mut AtomicPtr<Node<Key>>,
+pub struct Node<K: Ord> {
+    pub key: K,
+    pub nexts: *mut AtomicPtr<Node<K>>,
     pub height: usize,
 }
 
-impl<Key> Node<Key> {
-    fn new_ptr(key: Key, height: usize, arena: &RefCell<Arena>) -> *mut Node<Key> {
+impl<K: Ord> Node<K> {
+    fn new_ptr(key: K, height: usize, arena: &RefCell<Arena>) -> *mut Node<K> {
         let size =
-            height * std::mem::size_of::<AtomicPtr<Node<Key>>>() + std::mem::size_of::<Node<Key>>();
+            height * std::mem::size_of::<AtomicPtr<Node<K>>>() + std::mem::size_of::<Node<K>>();
         let mem = arena.borrow_mut().allocate_aligned(size);
         let buf = unsafe { slice::from_raw_parts_mut(mem, size) };
-        let (node_buf, ptr_buf) = buf.split_at_mut(size_of::<Node<Key>>());
-        let node_ptr = node_buf.as_mut_ptr() as *mut Node<Key>;
-        let nexts_ptr = ptr_buf.as_mut_ptr() as *mut AtomicPtr<Node<Key>>;
+        let (node_buf, ptr_buf) = buf.split_at_mut(size_of::<Node<K>>());
+        let node_ptr = node_buf.as_mut_ptr() as *mut Node<K>;
+        let nexts_ptr = ptr_buf.as_mut_ptr() as *mut AtomicPtr<Node<K>>;
 
         unsafe {
             for i in 0..height {
@@ -45,47 +45,41 @@ impl<Key> Node<Key> {
     }
 
     #[inline]
-    fn next(&self, n: usize) -> *mut Node<Key> {
+    fn next(&self, n: usize) -> *mut Node<K> {
         assert!(n < self.height);
         unsafe { (*self.nexts.add(n as usize)).load(std::sync::atomic::Ordering::Acquire) }
     }
 
     #[inline]
-    fn set_next(&mut self, n: usize, x: *mut Node<Key>) {
+    fn set_next(&mut self, n: usize, x: *mut Node<K>) {
         assert!(n < self.height);
         unsafe { (*self.nexts.add(n as usize)).store(x, std::sync::atomic::Ordering::Release) }
     }
 
     #[inline]
-    fn next_no_barrier(&self, n: usize) -> *mut Node<Key> {
+    fn next_no_barrier(&self, n: usize) -> *mut Node<K> {
         assert!(n < self.height);
         unsafe { (*self.nexts.add(n as usize)).load(std::sync::atomic::Ordering::Relaxed) }
     }
 
     #[inline]
-    fn set_next_no_barrier(&mut self, n: usize, x: *mut Node<Key>) {
+    fn set_next_no_barrier(&mut self, n: usize, x: *mut Node<K>) {
         assert!(n < self.height);
         unsafe { (*self.nexts.add(n as usize)).store(x, std::sync::atomic::Ordering::Relaxed) }
     }
 }
 
-pub struct SkipList<Key: Ord> {
-    // pub comparator: Rc<dyn Comparator<Key>>,
+pub struct SkipList<K: Ord> {
     pub arena: RefCell<Arena>,
     max_height: AtomicUsize,
-    head: *mut Node<Key>,
+    head: *mut Node<K>,
     rng: RefCell<ThreadRng>,
 }
 
-impl<Key: Ord> SkipList<Key> {
-    pub fn new(
-        // comparator: Rc<dyn Comparator<Key>>,
-        arena: RefCell<Arena>,
-        key: Key,
-    ) -> SkipList<Key> {
+impl<K: Ord> SkipList<K> {
+    pub fn new(arena: RefCell<Arena>, key: K) -> SkipList<K> {
         let head = Node::new_ptr(key, MAX_HEIGHT, &arena);
         SkipList {
-            // comparator,
             arena,
             max_height: AtomicUsize::new(1),
             head,
@@ -93,7 +87,7 @@ impl<Key: Ord> SkipList<Key> {
         }
     }
 
-    pub fn insert(&self, key: Key) {
+    pub fn insert(&self, key: K) {
         let mut prev = [std::ptr::null_mut(); MAX_HEIGHT];
         let x = self.find_greater_or_equal(&key, Some(&mut prev));
         // don't allow duplicate insertion
@@ -117,16 +111,16 @@ impl<Key: Ord> SkipList<Key> {
         }
     }
 
-    pub fn contains(&self, key: &Key) -> bool {
+    pub fn contains(&self, key: &K) -> bool {
         let x = self.find_greater_or_equal(key, None);
         !x.is_null() && self.equal(key, unsafe { &(*x).key })
     }
 
     fn find_greater_or_equal(
         &self,
-        key: &Key,
-        mut prev: Option<&mut [*mut Node<Key>]>,
-    ) -> *mut Node<Key> {
+        key: &K,
+        mut prev: Option<&mut [*mut Node<K>]>,
+    ) -> *mut Node<K> {
         let mut x = self.head;
         let mut level = self.get_max_height() - 1;
 
@@ -147,7 +141,7 @@ impl<Key: Ord> SkipList<Key> {
         }
     }
 
-    fn find_less_than(&self, key: &Key) -> *mut Node<Key> {
+    fn find_less_than(&self, key: &K) -> *mut Node<K> {
         let mut x = self.head;
         let mut level = self.get_max_height() - 1;
         assert!(x.is_null() || !self.equal(unsafe { &(*x).key }, key));
@@ -166,7 +160,7 @@ impl<Key: Ord> SkipList<Key> {
         }
     }
 
-    fn find_last(&self) -> *mut Node<Key> {
+    fn find_last(&self) -> *mut Node<K> {
         let mut x = self.head;
         let mut level = self.get_max_height() - 1;
         loop {
@@ -189,7 +183,7 @@ impl<Key: Ord> SkipList<Key> {
     }
 
     #[inline]
-    fn key_is_after_node(&self, key: &Key, n: *mut Node<Key>) -> bool {
+    fn key_is_after_node(&self, key: &K, n: *mut Node<K>) -> bool {
         !n.is_null() && unsafe { &(*n).key }.cmp(key) == Less
     }
 
@@ -206,7 +200,7 @@ impl<Key: Ord> SkipList<Key> {
     }
 
     #[inline]
-    fn equal(&self, a: &Key, b: &Key) -> bool {
+    fn equal(&self, a: &K, b: &K) -> bool {
         a.cmp(b) == Equal
     }
 }
@@ -281,9 +275,9 @@ mod tests {
 
     use super::*;
     use std::{
-        cmp::Ordering,
+        collections::hash_map::DefaultHasher,
         collections::BTreeSet,
-        hash::{DefaultHasher, Hasher},
+        rc::Rc,
         sync::{
             atomic::{
                 AtomicBool, AtomicU64,
@@ -293,21 +287,6 @@ mod tests {
         },
         thread,
     };
-
-    struct U64Comparator;
-
-    // impl Comparator<u64> for U64Comparator {
-    //     fn compare(&self, left: &u64, right: &u64) -> Ordering {
-    //         left.cmp(right)
-    //     }
-
-    //     fn name(&self) -> &'static str {
-    //         "skiplist test comparator"
-    //     }
-
-    //     fn find_shortest_separator(&self, _start: &mut u64, _limit: &u64) {}
-    //     fn find_short_successor(&self, _key: &mut u64) {}
-    // }
 
     #[test]
     fn test_skiplist_empty() {
@@ -343,11 +322,11 @@ mod tests {
         for _ in 0..N {
             let k = rng.next_u64() % R;
             if set.insert(k) {
-                list.insert(k);
+                list.insert(k as u64);
             }
         }
         for i in 0..R {
-            if list.contains(&(i as u64)) != set.contains(&(i as u64)) {
+            if list.contains(&i) != set.contains(&i) {
                 panic!("contains({}) is wrong", i);
             }
         }
@@ -372,9 +351,9 @@ mod tests {
         // Forward iteration test
         for i in 0..R {
             let mut iter = SkipListIterator::new(list.clone());
-            iter.seek(&(i as u64));
+            iter.seek(&i);
 
-            let mut model_iter = set.iter().filter(|&&k| k >= i as u64);
+            let mut model_iter = set.iter().filter(|&&k| k >= i);
             for _ in 0..3 {
                 let model_key = model_iter.next();
                 if model_key.is_none() {
@@ -382,7 +361,7 @@ mod tests {
                     break;
                 } else {
                     assert!(iter.valid());
-                    assert_eq!(*model_key.unwrap(), *iter.key() as u64);
+                    assert_eq!(*model_key.unwrap(), *iter.key());
                 }
                 iter.next();
             }
@@ -423,7 +402,7 @@ mod tests {
         pub fn new() -> Self {
             let arena = RefCell::new(Arena::new());
             // let comparator = Rc::new(U64Comparator {});
-            let list = Arc::new(SkipList::new(arena, 0));
+            let list: Arc<SkipList<u64>> = Arc::new(SkipList::new(arena, 0 as u64));
             let current = State::new();
             ConcurrentTest { current, list }
         }

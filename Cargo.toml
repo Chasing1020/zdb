@@ -10,4 +10,5 @@ license = "Apache-2.0"
 [dependencies]
 bytes = "1.5.0"
 integer-encoding = "4.0.0"
+num_enum = "0.7.2"
 rand = "0.8.5"
