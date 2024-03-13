@@ -111,9 +111,15 @@ impl<K: Ord> SkipList<K> {
         }
     }
 
+    #[inline]
     pub fn contains(&self, key: &K) -> bool {
         let x = self.find_greater_or_equal(key, None);
         !x.is_null() && self.equal(key, unsafe { &(*x).key })
+    }
+
+    #[inline]
+    pub fn approximate_mem_usage(&self) -> usize {
+        self.arena.borrow().mem_usage()
     }
 
     fn find_greater_or_equal(

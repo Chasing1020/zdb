@@ -1,4 +1,4 @@
-use std::mem::size_of;
+use std::{mem::{self, size_of}, sync::atomic::{AtomicUsize, Ordering::SeqCst}};
 
 const BLOCK_SIZE: u64 = 4096;
 const POINTER_LENGTH: usize = size_of::<*mut ()>();
@@ -7,7 +7,10 @@ pub struct Arena {
     alloc_ptr: *mut u8,
     bytes_remaining: usize,
     blocks: Vec<Vec<u8>>,
+    usage: AtomicUsize,
 }
+
+const EXTRA_VEC_LEN: usize = mem::size_of::<Vec<u8>>();
 
 impl Arena {
     pub fn new() -> Arena {
@@ -15,6 +18,7 @@ impl Arena {
             alloc_ptr: std::ptr::null_mut(),
             bytes_remaining: 0,
             blocks: Vec::new(),
+            usage: AtomicUsize::new(0),
         }
     }
 
@@ -70,7 +74,14 @@ impl Arena {
         }
         self.blocks.push(block);
         self.bytes_remaining = block_bytes;
-        self.blocks.last_mut().unwrap().as_mut_ptr()
+        let ptr = self.blocks.last_mut().unwrap().as_mut_ptr();
+        self.usage.fetch_add(block_bytes + EXTRA_VEC_LEN, SeqCst);
+        ptr
+    }
+
+    #[inline]
+    pub fn mem_usage(&self) -> usize {
+        self.usage.load(SeqCst)
     }
 }
 
