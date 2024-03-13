@@ -19,7 +19,7 @@ pub const MAX_SEQUENCE_NUMBER: u64 = (0x1u64 << 56) - 1;
 pub const INTERAL_SUFFIX_LEN: usize = mem::size_of::<u64>();
 
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default, FromPrimitive)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, FromPrimitive)]
 pub enum ValueType {
     Deletion = 0x0,
     #[default]

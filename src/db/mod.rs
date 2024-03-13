@@ -3,3 +3,4 @@ pub mod memtable;
 pub mod skiplist;
 pub mod write_batch;
 pub mod error;
+pub mod log;
