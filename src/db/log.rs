@@ -96,12 +96,12 @@ impl<W: Write> LogWriter<W> {
         let mut checksum_buf = header[..4].as_mut();
         checksum_buf.write_u32::<LittleEndian>(checksum)?;
         let mut length_buf = header[4..6].as_mut();
-        length_buf.write_u16::<LittleEndian>(data.len() as u16)?;
+        length_buf.write_u16::<LittleEndian>(length as u16)?;
         let mut record_type_buf = header[6..].as_mut();
         record_type_buf.write_u8(t as u8)?;
 
         self.writer.write_all(header.as_ref())?;
-        self.writer.write_all(data)?;
+        self.writer.write_all(&data[..length])?;
         self.writer.flush()?;
         self.offset += HEADER_SIZE + length;
 
@@ -125,7 +125,7 @@ impl<R: Read> LogReader<R> {
     pub fn new(reader: R, checksum: bool, initial_offset: usize) -> Self {
         LogReader {
             reader,
-            buffer: vec![0; BLOCK_SIZE],
+            buffer: vec![],
             end_of_buffer_offset: 0,
             checksum,
             initial_offset,
@@ -139,7 +139,7 @@ impl<R: Read> LogReader<R> {
         let mut in_fragmented_record = false;
 
         loop {
-            let record_type = self.read_physical_record();
+            let record_type = self.read_physical_record(&mut record);
 
             if self.resyncing {
                 match record_type {
@@ -156,9 +156,10 @@ impl<R: Read> LogReader<R> {
                 RecordType::Full => {
                     if in_fragmented_record && !record.is_empty() {
                         record.clear();
-                        return Err(StorageError::Corruption("partial record without end".to_string()));
+                        return Err(StorageError::Corruption(
+                            "partial record without end".to_string(),
+                        ));
                     }
-                    record.append(&mut self.buffer);
                     return Ok(record);
                 }
                 RecordType::First => {
@@ -166,8 +167,7 @@ impl<R: Read> LogReader<R> {
                         record.clear();
                         return Err(StorageError::Corruption("bad record".to_string()));
                     }
-                    record.append(&mut self.buffer);
-                    return Ok(record);
+                    in_fragmented_record = true;
                 }
                 RecordType::Middle => {
                     if !in_fragmented_record {
@@ -180,8 +180,6 @@ impl<R: Read> LogReader<R> {
                 }
                 RecordType::Last => {
                     if in_fragmented_record {
-                        let mut data = self.buffer.split_off(HEADER_SIZE);
-                        record.append(&mut data);
                         return Ok(record);
                     }
                 }
@@ -194,12 +192,12 @@ impl<R: Read> LogReader<R> {
         }
     }
 
-    pub fn read_physical_record(&mut self) -> RecordType {
+    pub fn read_physical_record(&mut self, restult: &mut Vec<u8>) -> RecordType {
         loop {
             if self.buffer.len() < HEADER_SIZE {
                 if !self.eof {
                     self.buffer.clear();
-                    match self.reader.read(self.buffer.as_mut()) {
+                    match self.reader.read_to_end(self.buffer.as_mut()) {
                         Ok(n) => {
                             self.end_of_buffer_offset += n;
                             if n < BLOCK_SIZE {
@@ -223,7 +221,7 @@ impl<R: Read> LogReader<R> {
             }
 
             let data = self.buffer.as_slice();
-            let length = u32::from_le_bytes([data[4], data[5], 0, 0]);
+            let length = u16::from_le_bytes([data[4], data[5]]);
             let record_type = RecordType::from(data[6]);
 
             if HEADER_SIZE + length as usize > self.buffer.len() {
@@ -262,7 +260,8 @@ impl<R: Read> LogReader<R> {
                 // return Ok((RecordType::BadRecord, length as usize));
             }
 
-            self.buffer = self.buffer.split_off(HEADER_SIZE);
+            self.buffer.drain(..HEADER_SIZE);
+            restult.extend(self.buffer.drain(..(length as usize)));
             if (self.end_of_buffer_offset - self.buffer.len() - HEADER_SIZE - length as usize)
                 < self.initial_offset
             {
@@ -290,4 +289,19 @@ mod tests {
     }
 
     // TODO: add more LogReader tests
+    #[test]
+    fn test_log_reader() {
+        let file = Vec::new();
+        let mut writer = LogWriter::new(file);
+        let data1 = vec![1u8; 1000];
+        writer.add_record(data1.as_slice()).unwrap();
+        let data2 = vec![1u8; 50000];
+        writer.add_record(data2.as_slice()).unwrap();
+
+        let mut reader = LogReader::new(writer.writer.as_slice(), false, 0);
+        let record1 = reader.read_record();
+        assert_eq!(record1.unwrap().as_slice(), data1.as_slice());
+        let record2 = reader.read_record();
+        assert_eq!(record2.unwrap().as_slice(), data2.as_slice());
+    }
 }
