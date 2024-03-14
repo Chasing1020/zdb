@@ -1,10 +1,11 @@
-use std::{error, io};
+use std::io;
 
 use thiserror::Error;
 
-
 #[derive(Error, Debug)]
 pub enum StorageError {
+    #[error("EOF")]
+    Eof,
     #[error("Not found: {0:?}")]
     NotFound(String),
     #[error("Corruption: {0:?}")]

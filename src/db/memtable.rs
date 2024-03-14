@@ -6,7 +6,7 @@ use super::{
     skiplist::{SkipList, SkipListIterator},
 };
 use crate::{db::dbformat::InternalKey, util::arena::Arena};
-use integer_encoding::{VarInt, VarIntWriter, FixedInt};
+use integer_encoding::{VarInt, VarIntWriter};
 
 // /// MemTableKey = KeyLen(Varint32) + InteralKey + ValLen(Varint32) + Value
 // pub struct MemtableKey<'a>(&'a [u8]);
@@ -17,14 +17,6 @@ pub struct MemTable<K: AsRef<[u8]> + From<Vec<u8>> + Ord> {
 }
 
 impl<K: AsRef<[u8]> + From<Vec<u8>> + Ord> MemTable<K> {
-    pub fn new() -> Self {
-        let arena = RefCell::new(Arena::new());
-
-        MemTable {
-            table: Arc::new(SkipList::new(arena, b"".to_vec().into())),
-        }
-    }
-
     pub fn add(&mut self, seq: u64, vt: ValueType, key: UserKey<&[u8]>, value: &[u8]) {
         self.table
             .insert(Self::build_memtable_key(seq, vt, key, value).into());
@@ -54,7 +46,7 @@ impl<K: AsRef<[u8]> + From<Vec<u8>> + Ord> MemTable<K> {
     }
 
     fn parse_memtable_key(key: &[u8]) -> (usize, usize, u64, usize, usize) {
-        let (keylen, mut i) = usize::decode_var(&key).unwrap();
+        let (keylen, mut i) = usize::decode_var(key).unwrap();
         let keyoff = i;
         i += keylen - 8;
 
@@ -98,6 +90,14 @@ impl<K: AsRef<[u8]> + From<Vec<u8>> + Ord> MemTable<K> {
     }
 }
 
+impl<K: AsRef<[u8]> + From<Vec<u8>> + Ord> Default for MemTable<K> {
+    fn default() -> Self {
+        let arena = RefCell::new(Arena::default());
+        MemTable {
+            table: Arc::new(SkipList::new(arena, vec![].into())),
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -105,7 +105,7 @@ mod tests {
 
     #[test]
     fn test_memtable() {
-        let mut memtable = MemTable::<Vec<u8>>::new();
+        let mut memtable = MemTable::<Vec<u8>>::default();
         let key = b"key".to_vec();
         let value = b"value".to_vec();
         let seq = 1;

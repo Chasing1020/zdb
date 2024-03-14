@@ -1,7 +1,7 @@
 use num_enum::FromPrimitive;
 use std::{
     borrow::Borrow,
-    cmp::Ordering::{Equal, Less},
+    cmp::Ordering::Less,
     convert::AsRef,
     fmt::{Debug, Display, Formatter},
     io::Write,
@@ -73,6 +73,11 @@ impl<T: AsRef<[u8]>> UserKey<T> {
     #[inline]
     pub fn len(&self) -> usize {
         self.0.as_ref().len()
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.0.as_ref().is_empty()
     }
 }
 
@@ -190,7 +195,7 @@ impl InternalKey<&[u8]> {
 impl<T: AsRef<[u8]> + Ord + Eq> Ord for InternalKey<T> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.user_key()
-            .cmp(&other.user_key())
+            .cmp(other.user_key())
             .then(other.seq().cmp(&self.seq()))
     }
 }
@@ -260,7 +265,7 @@ impl Comparator for InternalKeyComparator {
         let a = InternalKey(a);
         let b = InternalKey(b);
         self.comparator
-            .cmp(&a.user_key(), &b.user_key())
+            .cmp(a.user_key(), b.user_key())
             .then(b.seq().cmp(&a.seq()))
     }
 
@@ -270,7 +275,7 @@ impl Comparator for InternalKeyComparator {
 
         let sep = self
             .comparator
-            .find_shortest_separator(&ik_from.user_key(), &ik_to.user_key());
+            .find_shortest_separator(ik_from.user_key(), ik_to.user_key());
         if sep.len() < ik_from.user_key().len() && self.comparator.cmp(from, &sep) == Less {
             InternalKey::encode(&sep, MAX_SEQUENCE_NUMBER, ValueType::Value)
         } else {
@@ -280,7 +285,7 @@ impl Comparator for InternalKeyComparator {
 
     fn find_short_successor(&self, key: &[u8]) -> Vec<u8> {
         let ik = InternalKey(key);
-        let mut tmp = self.comparator.find_short_successor(&ik.user_key());
+        let mut tmp = self.comparator.find_short_successor(ik.user_key());
         if tmp.len() < ik.user_key().len() {
             tmp.put_u64(MAX_SEQUENCE_NUMBER << 8 | ValueType::Value as u64);
             return tmp;
@@ -344,8 +349,6 @@ impl LookupKey {
 
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
-
     use super::*;
 
     #[test]

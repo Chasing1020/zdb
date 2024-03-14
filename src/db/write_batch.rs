@@ -37,13 +37,13 @@ impl WriteBatch {
         self.rep.put_slice(key);
     }
 
-    fn set_sequence(&mut self, seq: u64) {
+    pub fn set_sequence(&mut self, seq: u64) {
         for i in 0..8 {
             self.rep[i] = (seq >> (i * 8)) as u8;
         }
     }
 
-    fn sequence(&self) -> u64 {
+    pub fn sequence(&self) -> u64 {
         let mut result = 0;
         for i in 0..8 {
             result |= (self.rep[i] as u64) << (i * 8);
@@ -51,13 +51,13 @@ impl WriteBatch {
         result
     }
 
-    fn set_count(&mut self, n: u32) {
+    pub fn set_count(&mut self, n: u32) {
         for i in 0..HEADER - 8 {
             self.rep[i + 8] = (n >> (i * 8)) as u8;
         }
     }
 
-    fn count(&self) -> u32 {
+    pub fn count(&self) -> u32 {
         let mut result = 0;
         for i in 0..HEADER - 8 {
             result |= (self.rep[i + 8] as u32) << (i * 8);

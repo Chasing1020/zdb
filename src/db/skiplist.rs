@@ -4,11 +4,8 @@ use rand::{rngs::ThreadRng, thread_rng, Rng};
 use std::{
     cell::RefCell,
     cmp::Ordering::{Equal, Less},
-    hash::Hasher,
     mem::size_of,
-    ptr,
-    rc::Rc,
-    slice,
+    ptr, slice,
     sync::{
         atomic::{AtomicPtr, AtomicUsize},
         Arc,
@@ -47,25 +44,25 @@ impl<K: Ord> Node<K> {
     #[inline]
     fn next(&self, n: usize) -> *mut Node<K> {
         assert!(n < self.height);
-        unsafe { (*self.nexts.add(n as usize)).load(std::sync::atomic::Ordering::Acquire) }
+        unsafe { (*self.nexts.add(n)).load(std::sync::atomic::Ordering::Acquire) }
     }
 
     #[inline]
     fn set_next(&mut self, n: usize, x: *mut Node<K>) {
         assert!(n < self.height);
-        unsafe { (*self.nexts.add(n as usize)).store(x, std::sync::atomic::Ordering::Release) }
+        unsafe { (*self.nexts.add(n)).store(x, std::sync::atomic::Ordering::Release) }
     }
 
     #[inline]
     fn next_no_barrier(&self, n: usize) -> *mut Node<K> {
         assert!(n < self.height);
-        unsafe { (*self.nexts.add(n as usize)).load(std::sync::atomic::Ordering::Relaxed) }
+        unsafe { (*self.nexts.add(n)).load(std::sync::atomic::Ordering::Relaxed) }
     }
 
     #[inline]
     fn set_next_no_barrier(&mut self, n: usize, x: *mut Node<K>) {
         assert!(n < self.height);
-        unsafe { (*self.nexts.add(n as usize)).store(x, std::sync::atomic::Ordering::Relaxed) }
+        unsafe { (*self.nexts.add(n)).store(x, std::sync::atomic::Ordering::Relaxed) }
     }
 }
 
@@ -77,6 +74,8 @@ pub struct SkipList<K: Ord> {
 }
 
 impl<K: Ord> SkipList<K> {
+    pub const BRANCHING: usize = 4;
+
     pub fn new(arena: RefCell<Arena>, key: K) -> SkipList<K> {
         let head = Node::new_ptr(key, MAX_HEIGHT, &arena);
         SkipList {
@@ -95,20 +94,31 @@ impl<K: Ord> SkipList<K> {
 
         let height = self.random_height();
         if height > self.get_max_height() {
-            for i in self.get_max_height()..height {
-                prev[i] = self.head;
-            }
+            prev.iter_mut()
+                .skip(self.get_max_height())
+                .take(height)
+                .for_each(|p| *p = self.head);
+            // for i in self.get_max_height()..height {
+            // prev[i] = self.head;
+            // }
             self.max_height
                 .store(height, std::sync::atomic::Ordering::Release);
         }
 
         let x = Node::new_ptr(key, height, &self.arena);
-        for i in 0..height {
-            unsafe {
-                (*x).set_next_no_barrier(i, (*prev[i]).next_no_barrier(i));
-                (*prev[i]).set_next(i, x);
-            }
-        }
+        prev.iter_mut()
+            .enumerate()
+            .take(height)
+            .for_each(|(i, &mut p)| unsafe {
+                (*x).set_next(i, (*p).next(i));
+                (*p).set_next(i, x);
+            });
+        // for i in 0..height {
+        //     unsafe {
+        //         (*x).set_next_no_barrier(i, (*prev[i]).next_no_barrier(i));
+        //         (*prev[i]).set_next(i, x);
+        //     }
+        // }
     }
 
     #[inline]
@@ -156,12 +166,10 @@ impl<K: Ord> SkipList<K> {
             let next = unsafe { (*x).next(level) };
             if !next.is_null() && unsafe { &(*next).key }.cmp(key) == Less {
                 x = next;
+            } else if level == 0 {
+                return x;
             } else {
-                if level == 0 {
-                    return x;
-                } else {
-                    level -= 1;
-                }
+                level -= 1;
             }
         }
     }
@@ -195,9 +203,9 @@ impl<K: Ord> SkipList<K> {
 
     #[inline]
     fn random_height(&self) -> usize {
-        const BRANCHING: usize = 4;
         let mut height = 1;
-        while height < MAX_HEIGHT && self.rng.borrow_mut().gen_range(0..BRANCHING) % BRANCHING == 0
+        while height < MAX_HEIGHT
+            && self.rng.borrow_mut().gen_range(0..Self::BRANCHING) % Self::BRANCHING == 0
         {
             height += 1;
         }
@@ -281,9 +289,8 @@ mod tests {
 
     use super::*;
     use std::{
-        collections::hash_map::DefaultHasher,
-        collections::BTreeSet,
-        rc::Rc,
+        collections::{hash_map::DefaultHasher, BTreeSet},
+        hash::Hasher,
         sync::{
             atomic::{
                 AtomicBool, AtomicU64,
@@ -296,7 +303,7 @@ mod tests {
 
     #[test]
     fn test_skiplist_empty() {
-        let skiplist = SkipList::new(RefCell::new(Arena::new()), 0);
+        let skiplist = SkipList::new(RefCell::new(Arena::default()), 0);
         assert!(!skiplist.contains(&1));
         let mut skip_iter = SkipListIterator::new(Arc::new(skiplist));
         assert!(!skip_iter.valid());
@@ -308,7 +315,7 @@ mod tests {
 
     #[test]
     fn test_skiplist_insert() {
-        let skiplist = SkipList::new(RefCell::new(Arena::new()), 0);
+        let skiplist = SkipList::new(RefCell::new(Arena::default()), 0);
         skiplist.insert(1);
         skiplist.insert(4);
         skiplist.insert(7);
@@ -321,7 +328,7 @@ mod tests {
     #[test]
     fn test_skiplist_insert_and_lookup() {
         let mut set = BTreeSet::new();
-        let list = Arc::new(SkipList::new(RefCell::new(Arena::new()), 0));
+        let list = Arc::new(SkipList::new(RefCell::new(Arena::default()), 0));
         let mut rng = thread_rng();
         const N: u64 = 2000;
         const R: u64 = 5000;
@@ -406,9 +413,9 @@ mod tests {
 
     impl ConcurrentTest {
         pub fn new() -> Self {
-            let arena = RefCell::new(Arena::new());
+            let arena = RefCell::new(Arena::default());
             // let comparator = Rc::new(U64Comparator {});
-            let list: Arc<SkipList<u64>> = Arc::new(SkipList::new(arena, 0 as u64));
+            let list: Arc<SkipList<u64>> = Arc::new(SkipList::new(arena, 0u64));
             let current = State::new();
             ConcurrentTest { current, list }
         }

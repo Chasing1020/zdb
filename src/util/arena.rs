@@ -1,4 +1,7 @@
-use std::{mem::{self, size_of}, sync::atomic::{AtomicUsize, Ordering::SeqCst}};
+use std::{
+    mem::{self, size_of},
+    sync::atomic::{AtomicUsize, Ordering::SeqCst},
+};
 
 const BLOCK_SIZE: u64 = 4096;
 const POINTER_LENGTH: usize = size_of::<*mut ()>();
@@ -13,15 +16,6 @@ pub struct Arena {
 const EXTRA_VEC_LEN: usize = mem::size_of::<Vec<u8>>();
 
 impl Arena {
-    pub fn new() -> Arena {
-        Arena {
-            alloc_ptr: std::ptr::null_mut(),
-            bytes_remaining: 0,
-            blocks: Vec::new(),
-            usage: AtomicUsize::new(0),
-        }
-    }
-
     #[inline]
     pub fn allocate(&mut self, bytes: usize) -> *mut u8 {
         if bytes <= self.bytes_remaining {
@@ -68,10 +62,7 @@ impl Arena {
 
     #[inline]
     pub fn allocate_new_block(&mut self, block_bytes: usize) -> *mut u8 {
-        let mut block = Vec::with_capacity(block_bytes);
-        unsafe {
-            block.set_len(block_bytes);
-        }
+        let block = (0..block_bytes).map(|_| 0u8).collect::<Vec<u8>>();
         self.blocks.push(block);
         self.bytes_remaining = block_bytes;
         let ptr = self.blocks.last_mut().unwrap().as_mut_ptr();
@@ -85,13 +76,24 @@ impl Arena {
     }
 }
 
+impl Default for Arena {
+    fn default() -> Self {
+        Arena {
+            alloc_ptr: std::ptr::null_mut(),
+            bytes_remaining: 0,
+            blocks: Vec::new(),
+            usage: AtomicUsize::new(0),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_arena() {
-        let mut arena = Arena::new();
+        let mut arena = Arena::default();
         let mut v = Vec::new();
         for i in 0..100 {
             v.push(arena.allocate(100));
@@ -99,10 +101,8 @@ mod tests {
                 v[i].write(i as u8);
             }
         }
-        for i in 0..100 {
-            unsafe {
-                assert_eq!(v[i].read(), i as u8);
-            }
-        }
+        v.iter().enumerate().take(100).for_each(|(i, p)| unsafe {
+            assert_eq!(p.read(), i as u8);
+        });
     }
 }
