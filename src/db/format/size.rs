@@ -48,7 +48,6 @@ impl EstimateSize for Bytes {
 }
 
 impl EstimateSize for Box<str> {
-    #[inline]
     fn estimated_heap_size(&self) -> usize {
         self.len()
     }

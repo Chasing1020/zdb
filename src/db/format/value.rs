@@ -2,9 +2,10 @@ use bytes::Bytes;
 
 use super::size::EstimateSize;
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub enum MemTableValue<T> {
     Put(T),
+    #[default]
     Delete,
 }
 

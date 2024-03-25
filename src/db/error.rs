@@ -2,6 +2,8 @@ use std::io;
 
 use thiserror::Error;
 
+pub type StorageResult<T> = std::result::Result<T, StorageError>;
+
 #[derive(Error, Debug)]
 pub enum StorageError {
     #[error("EOF")]

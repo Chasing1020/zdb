@@ -2,12 +2,19 @@ use std::{
     borrow::Borrow,
     fmt::{Debug, Display, Formatter},
     mem,
-    ops::{Deref, DerefMut},
+    ops::{Bound, Deref, DerefMut},
 };
 
 use bytes::{BufMut, Bytes};
 
 use super::size::EstimateSize;
+
+pub const MAX_SEQUENCE_NUMBER: u64 = SeqNumber::MAX;
+pub const INTERAL_SUFFIX_LEN: usize = mem::size_of::<SeqNumber>();
+
+pub type SeqNumber = u64;
+pub type UserKeyRange = (Bound<UserKey<Bytes>>, Bound<UserKey<Bytes>>);
+pub type MemTableKeyRange = (Bound<MemTableKey<Bytes>>, Bound<MemTableKey<Bytes>>);
 
 /// A UserKey is the actual key supplied by the calling application, without any internal
 /// decorations.
@@ -25,6 +32,8 @@ impl<T: AsRef<[u8]>> Display for UserKey<T> {
         write!(f, "UserKey: {:?}", self.0.as_ref())
     }
 }
+
+impl<T: AsRef<[u8]> + Copy> Copy for UserKey<T> {}
 
 impl<T: AsRef<[u8]>> AsRef<[u8]> for UserKey<T> {
     fn as_ref(&self) -> &[u8] {
@@ -76,13 +85,9 @@ impl EstimateSize for UserKey<Bytes> {
     }
 }
 
-type SeqNumber = u64;
-pub const MAX_SEQUENCE_NUMBER: u64 = SeqNumber::MAX;
-pub const INTERAL_SUFFIX_LEN: usize = mem::size_of::<SeqNumber>();
-
 /// A MemTableKey is a key in the memtable. It consists of a UserKey and a sequence number.
 /// MemTableKey = InternalKey + SeqNumber(8B)
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[derive(Clone, PartialEq, Eq, Hash, Default)]
 pub struct MemTableKey<T: AsRef<[u8]>> {
     pub user_key: UserKey<T>,
     pub seq: SeqNumber,
@@ -126,6 +131,32 @@ impl<T: AsRef<[u8]>> MemTableKey<T> {
         let mut buf = Vec::with_capacity(INTERAL_SUFFIX_LEN + self.user_key.len());
         self.encode_into(&mut buf);
         buf
+    }
+
+    pub fn len(&self) -> usize {
+        self.user_key.len() + INTERAL_SUFFIX_LEN
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.user_key.is_empty()
+    }
+}
+
+impl<T: AsRef<[u8]> + Copy> Copy for MemTableKey<T> {}
+
+impl<T: AsRef<[u8]> + PartialOrd> PartialOrd for MemTableKey<T> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.user_key
+            .partial_cmp(&other.user_key)
+            .or(other.seq.partial_cmp(&self.seq))
+    }
+}
+
+impl<T: AsRef<[u8]> + Ord> Ord for MemTableKey<T> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.user_key
+            .cmp(&other.user_key)
+            .then(other.seq.cmp(&self.seq))
     }
 }
 
