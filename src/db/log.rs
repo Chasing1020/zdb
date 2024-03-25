@@ -204,7 +204,7 @@ impl<R: Read> LogReader<R> {
                                 self.eof = true;
                             }
                         }
-                        Err(e) => {
+                        Err(_) => {
                             self.eof = true;
                             return RecordType::Eof;
                         }
