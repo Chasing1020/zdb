@@ -1,6 +1,6 @@
+pub mod block;
 pub mod dbformat;
 pub mod error;
+pub mod format;
 pub mod log;
 pub mod memtable;
-pub mod format;
-pub mod block;

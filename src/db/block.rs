@@ -1,9 +1,13 @@
 pub mod builder;
 pub mod iterator;
 
-use bytes::{Buf, BufMut, Bytes};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
+use integer_encoding::VarInt;
 
-use super::error::{StorageError, StorageResult};
+use super::{
+    error::{StorageError, StorageResult},
+    format::key::{TableKey, UserKey, INTERAL_SUFFIX_LEN},
+};
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -46,4 +50,23 @@ pub struct Block {
     pub restart_interval: usize,
     // compression type
     pub compression_type: CompressionType,
+}
+
+impl Block {
+    pub fn get_first_key(&self) -> TableKey<Bytes> {
+        let mut buf = BytesMut::default();
+
+        let (_shared_size, shared_len) = usize::decode_var(&self.uncompressed_data[..]).unwrap();
+        let (non_shared_size, non_shared_len) =
+            usize::decode_var(&self.uncompressed_data[shared_len..]).unwrap();
+        let (_value_size, value_len) =
+            usize::decode_var(&self.uncompressed_data[shared_len + non_shared_len..]).unwrap();
+
+        let start = shared_len + non_shared_len + value_len;
+        let end = start + non_shared_size;
+        buf.put(&self.uncompressed_data[start..end - INTERAL_SUFFIX_LEN]);
+
+        let seq = (&self.uncompressed_data[end - INTERAL_SUFFIX_LEN..end]).get_u64();
+        TableKey::new(UserKey(buf.freeze()), seq)
+    }
 }

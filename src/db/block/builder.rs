@@ -135,6 +135,8 @@ impl BlockBuilder {
 
 #[cfg(test)]
 mod test {
+    use bytes::Bytes;
+
     use super::*;
     use crate::db::format::key::{TableKey, UserKey};
     use crate::db::format::value::TableValue;
@@ -155,5 +157,19 @@ mod test {
         builder.add(new_table_key(b"key3", 0), new_table_value(b"value3"));
         assert!(!builder.is_empty());
         assert_eq!(builder.entry_count, 3);
+    }
+
+    #[test]
+    fn test_block_get_first_key() {
+        let mut builder = BlockBuilder::new(BlockBuilderOptions::default());
+        builder.add(new_table_key(b"key1", 0), new_table_value(b"value1"));
+        builder.add(new_table_key(b"key2", 0), new_table_value(b"value2"));
+        builder.add(new_table_key(b"key3", 0), new_table_value(b"value3"));
+        assert!(!builder.is_empty());
+        let block = builder.build();
+        assert_eq!(
+            block.get_first_key(),
+            TableKey::new(UserKey(Bytes::from("key1")), 0)
+        );
     }
 }
