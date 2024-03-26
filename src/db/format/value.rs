@@ -1,4 +1,4 @@
-use bytes::Bytes;
+use bytes::{BufMut, Bytes};
 
 use super::size::EstimateSize;
 
@@ -8,6 +8,9 @@ pub enum MemTableValue<T> {
     #[default]
     Delete,
 }
+
+pub const VALUE_PUT: u8 = 0;
+pub const VALUE_DELETE: u8 = 1 << 0;
 
 impl<T> Copy for MemTableValue<T> where T: Copy {}
 
@@ -62,6 +65,25 @@ impl<T: AsRef<[u8]>> MemTableValue<T> {
         match self {
             MemTableValue::Put(data) => MemTableValue::Put(data.as_ref()),
             MemTableValue::Delete => MemTableValue::Delete,
+        }
+    }
+
+    pub fn encode_into(&self, buf: &mut impl BufMut) {
+        match self {
+            MemTableValue::Put(data) => {
+                buf.put_u8(VALUE_PUT);
+                buf.put(data.as_ref());
+            }
+            MemTableValue::Delete => {
+                buf.put_u8(VALUE_DELETE);
+            }
+        }
+    }
+
+    pub fn encoded_len(&self) -> usize {
+        match self {
+            MemTableValue::Put(data) => data.as_ref().len() + 1,
+            MemTableValue::Delete => 1,
         }
     }
 }

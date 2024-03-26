@@ -1,21 +1,21 @@
-use std::io;
-
 use thiserror::Error;
 
 pub type StorageResult<T> = std::result::Result<T, StorageError>;
 
 #[derive(Error, Debug)]
 pub enum StorageError {
-    #[error("EOF")]
-    Eof,
-    #[error("Not found: {0:?}")]
-    NotFound(String),
-    #[error("Corruption: {0:?}")]
-    Corruption(String),
-    #[error("Not supported: {0:?}")]
-    NotSupported(String),
-    #[error("Invalid argument: {0:?}")]
-    InvalidArgument(String),
-    #[error(transparent)]
-    IOError(#[from] io::Error),
+    #[error("Encode error: {0}")]
+    EncodeError(String),
+    #[error("Decode error: {0}")]
+    DecodeError(String),
+}
+
+impl StorageError {
+    pub fn encode_error(msg: String) -> Self {
+        StorageError::EncodeError(msg)
+    }
+
+    pub fn decode_error(msg: String) -> Self {
+        StorageError::DecodeError(msg)
+    }
 }
