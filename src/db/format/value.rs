@@ -80,6 +80,15 @@ impl<T: AsRef<[u8]>> TableValue<T> {
         }
     }
 
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(match self {
+            TableValue::Put(data) => 1 + data.as_ref().len(),
+            TableValue::Delete => 1,
+        });
+        self.encode_into(&mut buf);
+        buf
+    }
+
     pub fn encoded_len(&self) -> usize {
         match self {
             TableValue::Put(data) => data.as_ref().len() + 1,

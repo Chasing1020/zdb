@@ -119,6 +119,7 @@ impl BlockBuilder {
             restart_points: self.restart_points,
             restart_interval: self.restart_interval,
             compression_type: self.compression_type,
+            entry_count: self.entry_count,
         }
     }
 
@@ -136,8 +137,10 @@ impl BlockBuilder {
 #[cfg(test)]
 mod test {
     use bytes::Bytes;
+    use crossbeam_skiplist::base::Entry;
 
     use super::*;
+    use crate::db::block::iterator::EntryPrefix;
     use crate::db::format::key::{TableKey, UserKey};
     use crate::db::format::value::TableValue;
 
@@ -167,6 +170,29 @@ mod test {
         builder.add(new_table_key(b"key3", 0), new_table_value(b"value3"));
         assert!(!builder.is_empty());
         let block = builder.build();
+        assert_eq!(
+            block.get_first_key(),
+            TableKey::new(UserKey(Bytes::from("key1")), 0)
+        );
+    }
+
+    #[test]
+    fn test_block_entry_prefix() {
+        let mut builder = BlockBuilder::new(BlockBuilderOptions::default());
+        builder.add(new_table_key(b"key1", 0), new_table_value(b"value1"));
+        builder.add(new_table_key(b"key2", 0), new_table_value(b"value2"));
+        builder.add(new_table_key(b"key3", 0), new_table_value(b"value3"));
+        assert!(!builder.is_empty());
+        let block = builder.build();
+        let prefix = EntryPrefix::decode(&block.uncompressed_data, 0);
+        assert_eq!(
+            block.uncompressed_data[prefix.unshared_key_range()],
+            new_table_key(b"key1", 0).encode()
+        );
+        assert_eq!(
+            &block.uncompressed_data[prefix.value_range()],
+            new_table_value(b"value1").encode_into(buf)
+        );
         assert_eq!(
             block.get_first_key(),
             TableKey::new(UserKey(Bytes::from("key1")), 0)

@@ -76,6 +76,15 @@ impl<T: AsRef<[u8]>> UserKey<T> {
     pub fn encode_into(&self, buf: &mut impl BufMut) {
         buf.put(self.0.as_ref());
     }
+
+    #[inline]
+    pub fn to_ref(&self) -> UserKey<&[u8]> {
+        UserKey(self.0.as_ref())
+    }
+
+    pub fn from_slice(slice: &[u8]) -> UserKey<Bytes> {
+        UserKey(Bytes::copy_from_slice(slice))
+    }
 }
 
 impl EstimateSize for UserKey<Bytes> {
@@ -139,6 +148,32 @@ impl<T: AsRef<[u8]>> TableKey<T> {
 
     pub fn is_empty(&self) -> bool {
         self.user_key.is_empty()
+    }
+}
+
+impl<'a> TableKey<&'a [u8]> {
+    pub fn decode(buf: &'a [u8]) -> Option<Self> {
+        if buf.len() < INTERAL_SUFFIX_LEN {
+            return None;
+        }
+        let seq = u64::from_le_bytes(buf[buf.len() - INTERAL_SUFFIX_LEN..].try_into().unwrap());
+        Some(TableKey {
+            user_key: UserKey(&buf[..buf.len() - INTERAL_SUFFIX_LEN]),
+            seq,
+        })
+    }
+
+    pub fn to_vec(self) -> TableKey<Vec<u8>> {
+        TableKey {
+            user_key: UserKey(self.user_key.0.to_vec()),
+            seq: self.seq,
+        }
+    }
+}
+
+impl<T: AsRef<[u8]>> TableKey<T> {
+    pub fn as_ref(&self) -> TableKey<&[u8]> {
+        TableKey::new(UserKey(self.user_key.as_ref()), self.seq)
     }
 }
 

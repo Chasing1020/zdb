@@ -44,6 +44,8 @@ impl CompressionType {
 pub struct Block {
     // uncompressed data
     pub uncompressed_data: Bytes,
+    // entry count
+    pub entry_count: usize,
     // restart points
     pub restart_points: Vec<u32>,
     // restart interval
@@ -68,5 +70,15 @@ impl Block {
 
         let seq = (&self.uncompressed_data[end - INTERAL_SUFFIX_LEN..end]).get_u64();
         TableKey::new(UserKey(buf.freeze()), seq)
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.uncompressed_data.is_empty()
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.uncompressed_data.len()
     }
 }
