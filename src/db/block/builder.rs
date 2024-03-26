@@ -3,7 +3,7 @@ use std::mem::size_of;
 use bytes::{BufMut, BytesMut};
 
 use super::{Block, CompressionType};
-use crate::db::format::{key::MemTableKey, value::MemTableValue};
+use crate::db::format::{key::TableKey, value::TableValue};
 use integer_encoding::*;
 
 pub const DEFAULT_BLOCK_SIZE: usize = 4096;
@@ -64,7 +64,7 @@ impl BlockBuilder {
     //     value_length: varint32
     //     key_delta: &[non_shared_bytes]
     //     value: &[value_length]
-    pub fn add(&mut self, table_key: MemTableKey<&[u8]>, table_value: MemTableValue<&[u8]>) {
+    pub fn add(&mut self, table_key: TableKey<&[u8]>, table_value: TableValue<&[u8]>) {
         let mut encoded_key = BytesMut::with_capacity(table_key.len());
         table_key.encode_into(&mut encoded_key);
         let mut encoded_value = BytesMut::with_capacity(table_value.encoded_len());
@@ -136,23 +136,23 @@ impl BlockBuilder {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::db::format::key::{MemTableKey, UserKey};
-    use crate::db::format::value::MemTableValue;
+    use crate::db::format::key::{TableKey, UserKey};
+    use crate::db::format::value::TableValue;
 
-    fn new_memtable_key(key: &[u8], seq: u64) -> MemTableKey<&[u8]> {
-        MemTableKey::new(UserKey(key), seq)
+    fn new_table_key(key: &[u8], seq: u64) -> TableKey<&[u8]> {
+        TableKey::new(UserKey(key), seq)
     }
 
-    fn new_memtable_value(value: &[u8]) -> MemTableValue<&[u8]> {
-        MemTableValue::Put(value)
+    fn new_table_value(value: &[u8]) -> TableValue<&[u8]> {
+        TableValue::Put(value)
     }
 
     #[test]
     fn test_block_builder() {
         let mut builder = BlockBuilder::new(BlockBuilderOptions::default());
-        builder.add(new_memtable_key(b"key1", 0), new_memtable_value(b"value1"));
-        builder.add(new_memtable_key(b"key2", 0), new_memtable_value(b"value2"));
-        builder.add(new_memtable_key(b"key3", 0), new_memtable_value(b"value3"));
+        builder.add(new_table_key(b"key1", 0), new_table_value(b"value1"));
+        builder.add(new_table_key(b"key2", 0), new_table_value(b"value2"));
+        builder.add(new_table_key(b"key3", 0), new_table_value(b"value3"));
         assert!(!builder.is_empty());
         assert_eq!(builder.entry_count, 3);
     }

@@ -14,7 +14,7 @@ pub const INTERAL_SUFFIX_LEN: usize = mem::size_of::<SeqNumber>();
 
 pub type SeqNumber = u64;
 pub type UserKeyRange = (Bound<UserKey<Bytes>>, Bound<UserKey<Bytes>>);
-pub type MemTableKeyRange = (Bound<MemTableKey<Bytes>>, Bound<MemTableKey<Bytes>>);
+pub type TableKeyRange = (Bound<TableKey<Bytes>>, Bound<TableKey<Bytes>>);
 
 /// A UserKey is the actual key supplied by the calling application, without any internal
 /// decorations.
@@ -85,39 +85,39 @@ impl EstimateSize for UserKey<Bytes> {
     }
 }
 
-/// A MemTableKey is a key in the memtable. It consists of a UserKey and a sequence number.
-/// MemTableKey = InternalKey + SeqNumber(8B)
+/// A TableKey is a key in the memtable. It consists of a UserKey and a sequence number.
+/// TableKey = UserKey + SeqNumber(8B)
 #[derive(Clone, PartialEq, Eq, Hash, Default)]
-pub struct MemTableKey<T: AsRef<[u8]>> {
+pub struct TableKey<T: AsRef<[u8]>> {
     pub user_key: UserKey<T>,
     pub seq: SeqNumber,
 }
 
-impl<T: AsRef<[u8]>> Debug for MemTableKey<T> {
+impl<T: AsRef<[u8]>> Debug for TableKey<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "MemTableKey: {:?}, Seq: {:?}",
+            "TableKey: {:?}, Seq: {:?}",
             self.user_key.as_ref(),
             self.seq
         )
     }
 }
 
-impl<T: AsRef<[u8]>> Display for MemTableKey<T> {
+impl<T: AsRef<[u8]>> Display for TableKey<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "MemTableKey: {:?}", self.user_key.as_ref())
+        write!(f, "TableKey: {:?}", self.user_key.as_ref())
     }
 }
 
-impl<T: AsRef<[u8]>> AsRef<[u8]> for MemTableKey<T> {
+impl<T: AsRef<[u8]>> AsRef<[u8]> for TableKey<T> {
     fn as_ref(&self) -> &[u8] {
         self.user_key.as_ref()
     }
 }
 
-impl<T: AsRef<[u8]>> MemTableKey<T> {
-    pub fn new(user_key: UserKey<T>, seq: SeqNumber) -> MemTableKey<T> {
+impl<T: AsRef<[u8]>> TableKey<T> {
+    pub fn new(user_key: UserKey<T>, seq: SeqNumber) -> TableKey<T> {
         Self { user_key, seq }
     }
 
@@ -142,9 +142,9 @@ impl<T: AsRef<[u8]>> MemTableKey<T> {
     }
 }
 
-impl<T: AsRef<[u8]> + Copy> Copy for MemTableKey<T> {}
+impl<T: AsRef<[u8]> + Copy> Copy for TableKey<T> {}
 
-impl<T: AsRef<[u8]> + PartialOrd> PartialOrd for MemTableKey<T> {
+impl<T: AsRef<[u8]> + PartialOrd> PartialOrd for TableKey<T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         self.user_key
             .partial_cmp(&other.user_key)
@@ -152,7 +152,7 @@ impl<T: AsRef<[u8]> + PartialOrd> PartialOrd for MemTableKey<T> {
     }
 }
 
-impl<T: AsRef<[u8]> + Ord> Ord for MemTableKey<T> {
+impl<T: AsRef<[u8]> + Ord> Ord for TableKey<T> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.user_key
             .cmp(&other.user_key)
@@ -160,7 +160,7 @@ impl<T: AsRef<[u8]> + Ord> Ord for MemTableKey<T> {
     }
 }
 
-impl EstimateSize for MemTableKey<Bytes> {
+impl EstimateSize for TableKey<Bytes> {
     #[inline]
     fn estimated_heap_size(&self) -> usize {
         self.user_key.estimated_heap_size() + mem::size_of::<SeqNumber>()

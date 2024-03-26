@@ -2,9 +2,9 @@ use super::{
     error::StorageResult,
     format::{
         iterator::StorageIterator,
-        key::{MemTableKey, MemTableKeyRange},
+        key::{TableKey, TableKeyRange},
         size::EstimateSize,
-        value::MemTableValue,
+        value::TableValue,
     },
 };
 
@@ -16,7 +16,7 @@ use std::sync::{atomic::AtomicUsize, Arc};
 #[derive(Clone)]
 pub struct MemTable {
     id: usize,
-    pub(crate) buffer: Arc<SkipMap<MemTableKey<Bytes>, MemTableValue<Bytes>>>,
+    pub(crate) buffer: Arc<SkipMap<TableKey<Bytes>, TableValue<Bytes>>>,
     pub(crate) kv_size: Arc<AtomicUsize>,
 }
 
@@ -31,8 +31,8 @@ impl MemTable {
 
     pub fn insert(
         &self,
-        key: MemTableKey<Bytes>,
-        value: MemTableValue<Bytes>,
+        key: TableKey<Bytes>,
+        value: TableValue<Bytes>,
     ) -> Result<(), anyhow::Error> {
         let estimated_size = key.estimated_size() + value.estimated_size();
         self.kv_size
@@ -41,16 +41,16 @@ impl MemTable {
         Ok(())
     }
 
-    pub fn get(&self, key: &MemTableKey<Bytes>) -> Option<MemTableValue<Bytes>> {
+    pub fn get(&self, key: &TableKey<Bytes>) -> Option<TableValue<Bytes>> {
         self.buffer.get(key).map(|e| e.value().clone())
     }
 
     /// Get an iterator over a range of keys.
-    pub fn scan(&self, range: MemTableKeyRange) -> MemTableIterator {
+    pub fn scan(&self, range: TableKeyRange) -> MemTableIterator {
         let mut iter = MemTableIteratorBuilder {
             map: self.buffer.clone(),
             iter_builder: |map| map.range(range),
-            item: (MemTableKey::default(), MemTableValue::default()),
+            item: (TableKey::default(), TableValue::default()),
         }
         .build();
         let entry = iter.with_iter_mut(|iter| MemTableIterator::entry_to_item(iter.next()));
@@ -65,37 +65,37 @@ impl MemTable {
 
 type SkipMapRangeIter<'a> = crossbeam_skiplist::map::Range<
     'a,
-    MemTableKey<Bytes>,
-    MemTableKeyRange,
-    MemTableKey<Bytes>,
-    MemTableValue<Bytes>,
+    TableKey<Bytes>,
+    TableKeyRange,
+    TableKey<Bytes>,
+    TableValue<Bytes>,
 >;
 
 #[self_referencing]
 pub struct MemTableIterator {
     /// Stores a reference to the skipmap.
-    map: Arc<SkipMap<MemTableKey<Bytes>, MemTableValue<Bytes>>>,
+    map: Arc<SkipMap<TableKey<Bytes>, TableValue<Bytes>>>,
     /// Stores a skipmap iterator that refers to the lifetime of `MemTableIterator` itself.
     #[borrows(map)]
     #[not_covariant]
     iter: SkipMapRangeIter<'this>,
     /// Stores the current key-value pair.
-    item: (MemTableKey<Bytes>, MemTableValue<Bytes>),
+    item: (TableKey<Bytes>, TableValue<Bytes>),
 }
 
 impl MemTableIterator {
     fn entry_to_item(
-        entry: Option<Entry<'_, MemTableKey<Bytes>, MemTableValue<Bytes>>>,
-    ) -> (MemTableKey<Bytes>, MemTableValue<Bytes>) {
+        entry: Option<Entry<'_, TableKey<Bytes>, TableValue<Bytes>>>,
+    ) -> (TableKey<Bytes>, TableValue<Bytes>) {
         entry
             .map(|x| (x.key().clone(), x.value().clone()))
-            .unwrap_or_else(|| (MemTableKey::default(), MemTableValue::default()))
+            .unwrap_or_else(|| (TableKey::default(), TableValue::default()))
     }
 }
 
 impl StorageIterator for MemTableIterator {
-    type KeyType<'a> = MemTableKey<Bytes>;
-    type ValueType<'a> = MemTableValue<Bytes>;
+    type KeyType<'a> = TableKey<Bytes>;
+    type ValueType<'a> = TableValue<Bytes>;
 
     fn value(&self) -> Self::ValueType<'_> {
         self.borrow_item().1.clone()
@@ -128,8 +128,8 @@ mod tests {
     fn test_memtable() {
         let memtable = MemTable::new(0);
         // gen test
-        let key = MemTableKey::new(UserKey(Bytes::from("key".as_bytes())), 0);
-        let value = MemTableValue::Put(Bytes::from("value".as_bytes()));
+        let key = TableKey::new(UserKey(Bytes::from("key".as_bytes())), 0);
+        let value = TableValue::Put(Bytes::from("value".as_bytes()));
         memtable.insert(key.clone(), value.clone()).unwrap();
 
         assert_eq!(memtable.get(&key).unwrap(), value);
@@ -139,12 +139,12 @@ mod tests {
     fn test_memtable_iterator() {
         let memtable = MemTable::new(0);
         // gen test
-        let key1 = MemTableKey::new(UserKey(Bytes::from("key1".as_bytes())), 0);
-        let value1 = MemTableValue::Put(Bytes::from("value1".as_bytes()));
+        let key1 = TableKey::new(UserKey(Bytes::from("key1".as_bytes())), 0);
+        let value1 = TableValue::Put(Bytes::from("value1".as_bytes()));
         memtable.insert(key1.clone(), value1.clone()).unwrap();
 
-        let key2 = MemTableKey::new(UserKey(Bytes::from("key2".as_bytes())), 0);
-        let value2 = MemTableValue::Put(Bytes::from("value2".as_bytes()));
+        let key2 = TableKey::new(UserKey(Bytes::from("key2".as_bytes())), 0);
+        let value2 = TableValue::Put(Bytes::from("value2".as_bytes()));
         memtable.insert(key2.clone(), value2.clone()).unwrap();
 
         let mut iter = memtable.scan((Bound::Unbounded, Bound::Unbounded));
