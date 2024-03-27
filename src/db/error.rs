@@ -8,6 +8,8 @@ pub enum StorageError {
     EncodeError(String),
     #[error("Decode error: {0}")]
     DecodeError(String),
+    #[error("IO error: {0}")]
+    IOError(#[from] std::io::Error),
 }
 
 impl StorageError {

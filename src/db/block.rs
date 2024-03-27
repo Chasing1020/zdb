@@ -81,4 +81,48 @@ impl Block {
     pub fn len(&self) -> usize {
         self.uncompressed_data.len()
     }
+
+    #[inline]
+    pub fn encoded_len(&self) -> usize {
+        self.uncompressed_data.len() + 4 + self.restart_points.len() * 4 + 4
+    }
+
+    // encode the block into the buffer
+    // the format is:
+    // | uncompressed_data | entry_count | restart_points * N | N | (N is u32 size)
+    pub fn encode_into(&self, buf: &mut impl BufMut) {
+        buf.put_slice(&self.uncompressed_data);
+        buf.put_u32_le(self.entry_count as u32);
+        for point in &self.restart_points {
+            buf.put_u32_le(*point);
+        }
+        buf.put_u32_le(self.restart_points.len() as u32);
+    }
+
+    pub fn encode(&self) -> Bytes {
+        let mut buf = BytesMut::with_capacity(self.len() + self.restart_points.len() * 4 + 4);
+        self.encode_into(&mut buf);
+        buf.freeze()
+    }
+
+    pub fn decode(buf: &[u8]) -> Self {
+        let restart_points_len = (&buf[buf.len() - 4..]).get_u32() as usize;
+        let restart_points_start = buf.len() - 4 - restart_points_len * 4;
+        let restart_points_end = buf.len() - 4;
+        let data_end = restart_points_start - 4;
+        let restart_points: Vec<u32> = buf[restart_points_start..restart_points_end]
+            .chunks_exact(4)
+            .map(|mut p| p.get_u32())
+            .collect();
+        let entry_count = (&buf[buf.len() - 4 - restart_points_len * 4..]).get_u32() as usize;
+        let uncompressed_data = Bytes::copy_from_slice(&buf[..data_end]);
+
+        Block {
+            uncompressed_data,
+            entry_count,
+            restart_points,
+            restart_interval: 0,
+            compression_type: CompressionType::None,
+        }
+    }
 }

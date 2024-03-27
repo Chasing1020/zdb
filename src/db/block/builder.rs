@@ -3,7 +3,7 @@ use std::mem::size_of;
 use bytes::{BufMut, BytesMut};
 
 use super::{Block, CompressionType};
-use crate::db::format::{key::TableKey, value::TableValue};
+use crate::db::format::{key::TableKey, size::EstimateSize, value::TableValue};
 use integer_encoding::*;
 
 pub const DEFAULT_BLOCK_SIZE: usize = 4096;
@@ -29,6 +29,16 @@ impl Default for BlockBuilderOptions {
     }
 }
 
+impl BlockBuilderOptions {
+    pub fn new(capacity: usize, compression_type: CompressionType, restart_interval: usize) -> Self {
+        BlockBuilderOptions {
+            capacity,
+            compression_type,
+            restart_interval,
+        }
+    }
+}
+
 /// `BlockBuilder` encodes and appends block to a buffer.
 pub struct BlockBuilder {
     // Write buffer.
@@ -43,6 +53,8 @@ pub struct BlockBuilder {
     last_key: Vec<u8>,
     // Compression algorithm.
     compression_type: CompressionType,
+    // Max block capacity.
+    max_block_capacity: usize,
 }
 
 impl BlockBuilder {
@@ -54,6 +66,7 @@ impl BlockBuilder {
             restart_interval: options.restart_interval,
             last_key: Vec::new(),
             compression_type: options.compression_type,
+            max_block_capacity: options.capacity,
         }
     }
 
@@ -64,7 +77,10 @@ impl BlockBuilder {
     //     value_length: varint32
     //     key_delta: &[non_shared_bytes]
     //     value: &[value_length]
-    pub fn add(&mut self, table_key: TableKey<&[u8]>, table_value: TableValue<&[u8]>) {
+    pub fn add(&mut self, table_key: TableKey<&[u8]>, table_value: TableValue<&[u8]>) -> bool {
+        if !self.is_empty() && self.estimated_size() > self.max_block_capacity {
+            return false
+        }
         let mut encoded_key = BytesMut::with_capacity(table_key.len());
         table_key.encode_into(&mut encoded_key);
         let mut encoded_value = BytesMut::with_capacity(table_value.encoded_len());
@@ -89,6 +105,7 @@ impl BlockBuilder {
         self.last_key.clear();
         self.last_key.extend_from_slice(&encoded_key);
         self.entry_count += 1;
+        true
     }
 
     #[inline]
@@ -131,6 +148,12 @@ impl BlockBuilder {
             i += 1;
         }
         i
+    }
+}
+
+impl EstimateSize for BlockBuilder {
+    fn estimated_heap_size(&self) -> usize {
+        self.buf.len()
     }
 }
 

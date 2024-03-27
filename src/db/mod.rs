@@ -4,3 +4,4 @@ pub mod error;
 pub mod format;
 pub mod log;
 pub mod memtable;
+pub mod sstable;
