@@ -89,7 +89,7 @@ impl Block {
 
     // encode the block into the buffer
     // the format is:
-    // | uncompressed_data | entry_count | restart_points * N | N | (N is u32 size)
+    // compressed: | entries * N | N | restart_points * M | M | (M, N are u32 size)
     pub fn encode_into(&self, buf: &mut impl BufMut) {
         buf.put_slice(&self.uncompressed_data);
         buf.put_u32_le(self.entry_count as u32);

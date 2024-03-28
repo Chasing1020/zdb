@@ -30,7 +30,11 @@ impl Default for BlockBuilderOptions {
 }
 
 impl BlockBuilderOptions {
-    pub fn new(capacity: usize, compression_type: CompressionType, restart_interval: usize) -> Self {
+    pub fn new(
+        capacity: usize,
+        compression_type: CompressionType,
+        restart_interval: usize,
+    ) -> Self {
         BlockBuilderOptions {
             capacity,
             compression_type,
@@ -64,7 +68,7 @@ impl BlockBuilder {
             entry_count: 0,
             restart_points: vec![],
             restart_interval: options.restart_interval,
-            last_key: Vec::new(),
+            last_key: vec![],
             compression_type: options.compression_type,
             max_block_capacity: options.capacity,
         }
@@ -79,7 +83,7 @@ impl BlockBuilder {
     //     value: &[value_length]
     pub fn add(&mut self, table_key: TableKey<&[u8]>, table_value: TableValue<&[u8]>) -> bool {
         if !self.is_empty() && self.estimated_size() > self.max_block_capacity {
-            return false
+            return false;
         }
         let mut encoded_key = BytesMut::with_capacity(table_key.len());
         table_key.encode_into(&mut encoded_key);

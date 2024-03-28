@@ -1,6 +1,7 @@
-use std::{fs::File, io::Write, path::Path};
+use std::{fs::File, hash::Hasher, io::Write, path::Path};
 
-use bytes::{Bytes, BytesMut};
+use bloomfilter::Bloom;
+use bytes::{BufMut, Bytes, BytesMut};
 
 use crate::db::{
     block::{
@@ -16,6 +17,7 @@ use crate::db::{
 use super::{BlockMeta, Sstable};
 
 pub const DEFAULT_SSTABLE_SIZE: usize = 4 * 1024 * 1024; // 4MB
+pub const DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE: f64 = 0.01;
 
 #[derive(Debug, Clone)]
 pub struct SstableBuilderOptions {
@@ -24,7 +26,7 @@ pub struct SstableBuilderOptions {
     // block capacity
     pub block_capacity: usize,
     // bloom filter false positive rate
-    // pub false_positive_rate: f64,
+    pub false_positive_rate: f64,
     // Compression algorithm.
     pub compression_type: CompressionType,
     // Restart point interval.
@@ -36,6 +38,7 @@ impl Default for SstableBuilderOptions {
         SstableBuilderOptions {
             capacity: DEFAULT_SSTABLE_SIZE,
             block_capacity: DEFAULT_BLOCK_SIZE,
+            false_positive_rate: DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE,
             compression_type: CompressionType::None,
             restart_interval: DEFAULT_RESTART_INTERVAL,
         }
@@ -47,6 +50,8 @@ pub struct SstableBuilder {
     options: SstableBuilderOptions,
     // Write buffer.
     buf: BytesMut,
+    // Block count.
+    block_count: u32,
     // First key.
     first_key: Vec<u8>,
     // Block builder.
@@ -54,7 +59,7 @@ pub struct SstableBuilder {
     // Block metas.
     block_metas: Vec<BlockMeta>,
     // Bloom filter.
-    // bloom_filter: BloomFilter,
+    bloom_filter: Bloom<u64>,
 }
 
 impl SstableBuilder {
@@ -67,9 +72,11 @@ impl SstableBuilder {
         SstableBuilder {
             options: options.clone(),
             buf: BytesMut::with_capacity(options.capacity),
+            block_count: 0,
             first_key: vec![],
             block_builder,
             block_metas: vec![],
+            bloom_filter: Bloom::new_for_fp_rate(options.capacity, options.false_positive_rate),
         }
     }
 
@@ -77,6 +84,11 @@ impl SstableBuilder {
         if self.first_key.is_empty() {
             self.first_key = table_key.encode().to_vec();
         }
+
+        let mut hasher = ahash::AHasher::default();
+        hasher.write(&table_key.encode());
+        let hash = hasher.finish();
+        self.bloom_filter.set(&hash);
 
         if self.block_builder.add(table_key, table_value) {
             return;
@@ -89,6 +101,8 @@ impl SstableBuilder {
     }
 
     fn finish_block(&mut self) {
+        self.block_count += 1;
+        let last_key = Bytes::copy_from_slice(self.block_builder.last_key());
         let new_block_builder = BlockBuilder::new(BlockBuilderOptions::new(
             self.options.block_capacity,
             self.options.compression_type,
@@ -109,15 +123,36 @@ impl SstableBuilder {
             block.encoded_len() as u64,
             block.entry_count as u32,
             Bytes::from(block.get_first_key().encode()),
+            last_key,
         ));
     }
 
+    // Build the sstable file.
+    // The format is:
+    // | block1 | block2 | ... | blockN | N | block_meta_offset | block_metas | bloomfilter_offset | bloomfilter |
     pub async fn build(mut self, path: impl AsRef<Path>) -> StorageResult<Sstable> {
         self.finish_block();
+        self.buf.put_u32(self.block_count);
+
+        let block_meta_offset = self.buf.len();
+        self.buf.put_u32_le(block_meta_offset as u32);
+        self.block_metas
+            .iter()
+            .for_each(|meta| meta.encode_into(&mut self.buf));
+
+        let filter = self.bloom_filter.bitmap();
+        let bloomfilter_offset = self.buf.len();
+        self.buf.put(filter.as_slice());
+
         let mut file = File::create(path)?;
         file.write_all(&self.buf)?;
 
-        let sstable = Sstable::new(file, self.block_metas, self.buf.len() as u64);
+        let sstable = Sstable::new(
+            file,
+            self.block_metas,
+            block_meta_offset as u64,
+            bloomfilter_offset as u64,
+        );
         Ok(sstable)
     }
 }
