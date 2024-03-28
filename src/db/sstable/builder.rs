@@ -120,7 +120,7 @@ impl SstableBuilder {
 
         self.block_metas.push(BlockMeta::new(
             last_offset,
-            block.encoded_len() as u64,
+            block.uncompressed_len() as u64,
             block.entry_count as u32,
             Bytes::from(block.get_first_key().encode()),
             last_key,

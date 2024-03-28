@@ -245,4 +245,34 @@ mod test {
             new_table_value(b"value3").encode()
         );
     }
+
+    #[test]
+    fn test_block_compression() {
+        inner_test_block_compression(CompressionType::Snappy);
+        inner_test_block_compression(CompressionType::Lz4);
+        inner_test_block_compression(CompressionType::Zstd);
+    }
+
+    fn inner_test_block_compression(compression_type: CompressionType) {
+        let mut builder = BlockBuilder::new(BlockBuilderOptions::new(
+            DEFAULT_BLOCK_SIZE,
+            compression_type,
+            DEFAULT_RESTART_INTERVAL,
+        ));
+
+        for i in 1..50 {
+            let k = format!("key{}", i);
+            let v = format!("value{}", i);
+            builder.add(
+                new_table_key(k.as_bytes(), 0),
+                new_table_value(v.as_bytes()),
+            );
+        }
+        let block = builder.build();
+
+        let mut target = BytesMut::new();
+        block.encode_into(&mut target);
+        let new_block = Block::decode(&target);
+        assert_eq!(block, new_block);
+    }
 }
