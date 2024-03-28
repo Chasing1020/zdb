@@ -86,16 +86,14 @@ impl BlockIterator {
     }
 
     fn try_prev(&mut self) -> bool {
-        if self.offset == 0 {
+        if self.offset == 0 || self.idx == 0 {
             return false;
         }
         let mut restart_point_idx = self.idx / self.block.restart_interval;
-        if self.idx % self.block.restart_interval == 0 {
+        if restart_point_idx != 0 && self.idx % self.block.restart_interval == 0 {
             restart_point_idx -= 1;
         }
-        if restart_point_idx == 0 {
-            return false;
-        }
+
         let old_offset = self.offset - self.entry_len;
         self.seek_to_restart_point(restart_point_idx);
         self.next_until_prev_offset(old_offset);
@@ -131,6 +129,15 @@ impl BlockIterator {
     pub fn seek(&mut self, key: TableKey<&[u8]>) {
         self.seek_restart_point_by_key(key);
         self.next_until_key(key);
+    }
+
+    pub fn seek_le(&mut self, key: TableKey<&[u8]>) {
+        self.seek_restart_point_by_key(key);
+        self.next_until_key(key);
+        if !self.is_valid() {
+            self.seek_to_last();
+        }
+        self.prev_until_key(key);
     }
 
     fn seek_restart_point_by_key(&mut self, key: TableKey<&[u8]>) {
@@ -246,5 +253,13 @@ mod tests {
         let key = new_table_key(b"key25", 0);
         iter.seek(key);
         assert_eq!(iter.table_key().user_key.0, b"key25");
+
+        let key = new_table_key(b"key100", 0);
+        iter.seek(key);
+        assert_eq!(iter.table_key().user_key.0, b"key2");
+
+        let key = new_table_key(b"key100", 0);
+        iter.seek_le(key);
+        assert_eq!(iter.table_key().user_key.0, b"key1");
     }
 }
