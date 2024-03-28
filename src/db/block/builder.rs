@@ -35,6 +35,10 @@ impl BlockBuilderOptions {
         compression_type: CompressionType,
         restart_interval: usize,
     ) -> Self {
+        assert!(
+            restart_interval > 0,
+            "restart interval must be greater than 0"
+        );
         BlockBuilderOptions {
             capacity,
             compression_type,
@@ -164,7 +168,7 @@ impl EstimateSize for BlockBuilder {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::db::block::iterator::EntryPrefix;
+    use crate::db::block::prefix::EntryPrefix;
     use crate::db::format::key::{TableKey, UserKey};
     use crate::db::format::value::TableValue;
     use bytes::Bytes;
@@ -196,8 +200,8 @@ mod test {
         assert!(!builder.is_empty());
         let block = builder.build();
         assert_eq!(
-            block.get_first_key(),
-            TableKey::new(UserKey(Bytes::from("key1")), 0)
+            block.get_first_key().encode(),
+            TableKey::new(UserKey(Bytes::from("key1")), 0).encode()
         );
     }
 
@@ -219,8 +223,8 @@ mod test {
             new_table_value(b"value1").encode()
         );
         assert_eq!(
-            block.get_first_key(),
-            TableKey::new(UserKey(Bytes::from("key1")), 0)
+            block.get_first_key().encode(),
+            TableKey::new(UserKey(Bytes::from("key1")), 0).encode()
         );
 
         let entry_len = prefix.entry_len();

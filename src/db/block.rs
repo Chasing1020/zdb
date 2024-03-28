@@ -1,14 +1,16 @@
 pub mod builder;
 pub mod iterator;
+pub mod prefix;
 
 use std::io::{Read, Write};
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
-use integer_encoding::VarInt;
+
+use self::prefix::EntryPrefix;
 
 use super::{
     error::{StorageError, StorageResult},
-    format::key::{TableKey, UserKey, INTERAL_SUFFIX_LEN},
+    format::key::TableKey,
 };
 
 #[repr(u8)]
@@ -58,21 +60,10 @@ pub struct Block {
 }
 
 impl Block {
-    pub fn get_first_key(&self) -> TableKey<Bytes> {
-        let mut buf = BytesMut::default();
-
-        let (_shared_size, shared_len) = usize::decode_var(&self.uncompressed_data[..]).unwrap();
-        let (non_shared_size, non_shared_len) =
-            usize::decode_var(&self.uncompressed_data[shared_len..]).unwrap();
-        let (_value_size, value_len) =
-            usize::decode_var(&self.uncompressed_data[shared_len + non_shared_len..]).unwrap();
-
-        let start = shared_len + non_shared_len + value_len;
-        let end = start + non_shared_size;
-        buf.put(&self.uncompressed_data[start..end - INTERAL_SUFFIX_LEN]);
-
-        let seq = (&self.uncompressed_data[end - INTERAL_SUFFIX_LEN..end]).get_u64();
-        TableKey::new(UserKey(buf.freeze()), seq)
+    pub fn get_first_key(&self) -> TableKey<&[u8]> {
+        let prefix = EntryPrefix::decode(&self.uncompressed_data, 0);
+        let key = &self.uncompressed_data[prefix.unshared_key_range()];
+        TableKey::decode(key).unwrap()
     }
 
     #[inline]
@@ -163,7 +154,9 @@ impl Block {
                 encoder.write_all(buf).unwrap();
                 encoder.flush().unwrap();
             }
-            CompressionType::None => unreachable!(),
+            CompressionType::None => {
+                compress_writer.put_slice(buf);
+            }
         }
     }
 

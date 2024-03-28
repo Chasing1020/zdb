@@ -78,6 +78,16 @@ impl<T: AsRef<[u8]>> UserKey<T> {
     }
 
     #[inline]
+    pub fn encode(&self) -> Vec<u8> {
+        self.0.as_ref().to_vec()
+    }
+
+    #[inline]
+    pub fn decode(buf: &[u8]) -> UserKey<Bytes> {
+        UserKey(Bytes::copy_from_slice(buf))
+    }
+
+    #[inline]
     pub fn to_ref(&self) -> UserKey<&[u8]> {
         UserKey(self.0.as_ref())
     }
