@@ -1,8 +1,6 @@
-use std::{fs::File, hash::Hasher, io::Write, path::Path};
+use std::path::Path;
 
-use bloomfilter::Bloom;
-use bytes::{BufMut, Bytes, BytesMut};
-
+use super::{filter::BloomBuilder, BlockMeta, Sstable};
 use crate::db::{
     block::{
         builder::{
@@ -14,7 +12,8 @@ use crate::db::{
     format::{key::TableKey, size::EstimateSize, value::TableValue},
 };
 
-use super::{BlockMeta, Sstable};
+use bytes::{BufMut, Bytes, BytesMut};
+use tokio::io::AsyncWriteExt;
 
 pub const DEFAULT_SSTABLE_SIZE: usize = 4 * 1024 * 1024; // 4MB
 pub const DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE: f64 = 0.01;
@@ -52,14 +51,12 @@ pub struct SstableBuilder {
     buf: BytesMut,
     // Block count.
     block_count: u32,
-    // First key.
-    first_key: Vec<u8>,
     // Block builder.
     block_builder: BlockBuilder,
     // Block metas.
     block_metas: Vec<BlockMeta>,
     // Bloom filter.
-    bloom_filter: Bloom<u64>,
+    bloom_builder: BloomBuilder,
 }
 
 impl SstableBuilder {
@@ -73,22 +70,14 @@ impl SstableBuilder {
             options: options.clone(),
             buf: BytesMut::with_capacity(options.capacity),
             block_count: 0,
-            first_key: vec![],
             block_builder,
             block_metas: vec![],
-            bloom_filter: Bloom::new_for_fp_rate(options.capacity, options.false_positive_rate),
+            bloom_builder: BloomBuilder::new(options.false_positive_rate),
         }
     }
 
     pub fn add(&mut self, table_key: TableKey<&[u8]>, table_value: TableValue<&[u8]>) {
-        if self.first_key.is_empty() {
-            self.first_key = table_key.encode().to_vec();
-        }
-
-        let mut hasher = ahash::AHasher::default();
-        hasher.write(&table_key.encode());
-        let hash = hasher.finish();
-        self.bloom_filter.set(&hash);
+        self.bloom_builder.add(table_key.encode());
 
         if self.block_builder.add(table_key, table_value) {
             return;
@@ -97,7 +86,6 @@ impl SstableBuilder {
         self.finish_block();
 
         assert!(self.block_builder.add(table_key, table_value));
-        self.first_key = table_key.encode().to_vec();
     }
 
     fn finish_block(&mut self) {
@@ -120,7 +108,7 @@ impl SstableBuilder {
 
         self.block_metas.push(BlockMeta::new(
             last_offset,
-            block.uncompressed_len() as u64,
+            block.uncompressed_len() as u32,
             block.entry_count as u32,
             Bytes::from(block.get_first_key().encode()),
             last_key,
@@ -129,29 +117,29 @@ impl SstableBuilder {
 
     // Build the sstable file.
     // The format is:
-    // | block1 | block2 | ... | blockN | N | block_meta_offset | block_metas | bloomfilter_offset | bloomfilter |
+    // | block1 | block2 | ... | blockN | N | block_metas | block_meta_offset | bloomfilter | bloomfilter_offset |
     pub async fn build(mut self, path: impl AsRef<Path>) -> StorageResult<Sstable> {
         self.finish_block();
         self.buf.put_u32(self.block_count);
 
         let block_meta_offset = self.buf.len();
-        self.buf.put_u32_le(block_meta_offset as u32);
-        self.block_metas
-            .iter()
-            .for_each(|meta| meta.encode_into(&mut self.buf));
+        BlockMeta::encode_many(&self.block_metas, &mut self.buf);
+        self.buf.put_u32(block_meta_offset as u32);
 
-        let filter = self.bloom_filter.bitmap();
         let bloomfilter_offset = self.buf.len();
-        self.buf.put(filter.as_slice());
+        let bloom_filter = self.bloom_builder.build();
+        bloom_filter.encode_into(&mut self.buf);
+        self.buf.put_u32(bloomfilter_offset as u32);
 
-        let mut file = File::create(path)?;
-        file.write_all(&self.buf)?;
+        let mut file = tokio::fs::File::create(path).await?;
+        file.write_all(&self.buf).await?;
 
         let sstable = Sstable::new(
             file,
             self.block_metas,
             block_meta_offset as u64,
             bloomfilter_offset as u64,
+            Some(bloom_filter),
         );
         Ok(sstable)
     }
@@ -192,7 +180,27 @@ mod test {
         }
         let sstable = builder.build(path::Path::new("test.sst")).await.unwrap();
         assert_eq!(sstable.block_metas.len(), 1);
-        assert_eq!(sstable.block_metas[0].entry_count, 50);
+        assert_eq!(sstable.block_metas[0].entries, 50);
+        std::fs::remove_file("test.sst").unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_sstable_build_and_open() {
+        let mut builder = SstableBuilder::new(SstableBuilderOptions::default());
+        let keys = 10000;
+        for i in 0..keys {
+            let k = format!("key{}", i);
+            let v = format!("value{}", i);
+            builder.add(
+                new_table_key(k.as_bytes(), 0),
+                new_table_value(v.as_bytes()),
+            );
+        }
+        let sstable = builder.build(path::Path::new("test.sst")).await.unwrap();
+
+        let sstable_from_file = Sstable::open(path::Path::new("test.sst")).await.unwrap();
+        assert_eq!(sstable.block_metas, sstable_from_file.block_metas);
+        assert_eq!(sstable.bloom_filter, sstable_from_file.bloom_filter);
         std::fs::remove_file("test.sst").unwrap();
     }
 }
