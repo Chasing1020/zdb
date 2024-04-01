@@ -2,7 +2,7 @@ use bytes::BytesMut;
 use std::{cmp::Ordering, ops::Range, sync::Arc};
 
 use super::{prefix::EntryPrefix, Block};
-use crate::db::format::key::TableKey;
+use crate::db::format::{key::TableKey, value::TableValue};
 
 /// Iterates on a block.
 pub struct BlockIterator {
@@ -32,6 +32,18 @@ impl BlockIterator {
         }
     }
 
+    pub fn create_and_seek_to_first(block: Arc<Block>) -> Self {
+        let mut iter = Self::new(block);
+        iter.seek_to_first();
+        iter
+    }
+
+    pub fn create_and_seek_to_key(block: Arc<Block>, key: TableKey<&[u8]>) -> Self {
+        let mut iter = Self::new(block);
+        iter.seek(key);
+        iter
+    }
+
     fn invalidate(&mut self) {
         self.key = BytesMut::default();
         self.value_range = 0..0;
@@ -44,12 +56,12 @@ impl BlockIterator {
 
     #[inline]
     pub fn table_key(&self) -> TableKey<&[u8]> {
-        TableKey::decode(&self.key[..]).unwrap()
+        TableKey::decode(&self.key[..])
     }
 
     #[inline]
-    pub fn table_value(&self) -> &[u8] {
-        &self.block.uncompressed_data[self.value_range.clone()]
+    pub fn table_value(&self) -> TableValue<&[u8]> {
+        TableValue::decode(&self.block.uncompressed_data[self.value_range.clone()])
     }
 
     pub fn next(&mut self) {
@@ -156,7 +168,6 @@ impl BlockIterator {
                     restart_point as usize,
                 );
                 match TableKey::decode(&self.block.uncompressed_data[prefix.unshared_key_range()])
-                    .unwrap()
                     .cmp(&key)
                 {
                     Ordering::Less | Ordering::Equal => true,
@@ -226,7 +237,7 @@ mod tests {
             let key = iter.table_key();
             let value = iter.table_value();
             assert_eq!(key.user_key.0, format!("key{}", i).as_bytes());
-            assert_eq!(value, TableValue::put(format!("value{}", i)).encode());
+            assert_eq!(value, TableValue::put(format!("value{}", i).as_bytes()));
             i += 1;
             iter.next();
         }
@@ -241,7 +252,7 @@ mod tests {
             let key = iter.table_key();
             let value = iter.table_value();
             assert_eq!(key.user_key.0, format!("key{}", i).as_bytes());
-            assert_eq!(value, TableValue::put(format!("value{}", i)).encode());
+            assert_eq!(value, TableValue::put(format!("value{}", i).as_bytes()));
             i -= 1;
             iter.prev();
         }

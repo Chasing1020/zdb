@@ -161,21 +161,35 @@ impl<T: AsRef<[u8]>> TableKey<T> {
     }
 }
 
-impl<'a> TableKey<&'a [u8]> {
-    pub fn decode(buf: &'a [u8]) -> Option<Self> {
-        if buf.len() < INTERAL_SUFFIX_LEN {
-            return None;
-        }
+impl TableKey<Bytes> {
+    pub fn from_bytes(buf: Bytes) -> Self {
         let seq = u64::from_le_bytes(buf[buf.len() - INTERAL_SUFFIX_LEN..].try_into().unwrap());
-        Some(TableKey {
+        TableKey {
+            user_key: UserKey(buf.slice(0..buf.len() - INTERAL_SUFFIX_LEN)),
+            seq,
+        }
+    }
+}
+
+impl<'a> TableKey<&'a [u8]> {
+    pub fn decode(buf: &'a [u8]) -> Self {
+        let seq = u64::from_le_bytes(buf[buf.len() - INTERAL_SUFFIX_LEN..].try_into().unwrap());
+        TableKey {
             user_key: UserKey(&buf[..buf.len() - INTERAL_SUFFIX_LEN]),
             seq,
-        })
+        }
     }
 
     pub fn to_vec(self) -> TableKey<Vec<u8>> {
         TableKey {
             user_key: UserKey(self.user_key.0.to_vec()),
+            seq: self.seq,
+        }
+    }
+
+    pub fn to_bytes(self) -> TableKey<Bytes> {
+        TableKey {
+            user_key: UserKey(Bytes::copy_from_slice(self.user_key.0)),
             seq: self.seq,
         }
     }

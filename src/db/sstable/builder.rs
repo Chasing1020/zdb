@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{fs::File, io::Write, path::Path, sync::Arc};
 
 use super::{filter::BloomBuilder, BlockMeta, Sstable};
 use crate::db::{
@@ -6,14 +6,13 @@ use crate::db::{
         builder::{
             BlockBuilder, BlockBuilderOptions, DEFAULT_BLOCK_SIZE, DEFAULT_RESTART_INTERVAL,
         },
-        CompressionType,
+        BlockCache, CompressionType,
     },
     error::StorageResult,
     format::{key::TableKey, size::EstimateSize, value::TableValue},
 };
 
 use bytes::{BufMut, Bytes, BytesMut};
-use tokio::io::AsyncWriteExt;
 
 pub const DEFAULT_SSTABLE_SIZE: usize = 4 * 1024 * 1024; // 4MB
 pub const DEFAULT_BLOOM_FILTER_FALSE_POSITIVE_RATE: f64 = 0.01;
@@ -90,7 +89,7 @@ impl SstableBuilder {
 
     fn finish_block(&mut self) {
         self.block_count += 1;
-        let last_key = Bytes::copy_from_slice(self.block_builder.last_key());
+        let last_key = TableKey::from_bytes(Bytes::copy_from_slice(self.block_builder.last_key()));
         let new_block_builder = BlockBuilder::new(BlockBuilderOptions::new(
             self.options.block_capacity,
             self.options.compression_type,
@@ -110,7 +109,7 @@ impl SstableBuilder {
             last_offset,
             block.uncompressed_len() as u32,
             block.entry_count as u32,
-            Bytes::from(block.get_first_key().encode()),
+            block.get_first_key().to_bytes(),
             last_key,
         ));
     }
@@ -118,28 +117,35 @@ impl SstableBuilder {
     // Build the sstable file.
     // The format is:
     // | block1 | block2 | ... | blockN | N | block_metas | block_meta_offset | bloomfilter | bloomfilter_offset |
-    pub async fn build(mut self, path: impl AsRef<Path>) -> StorageResult<Sstable> {
+    pub async fn build(
+        mut self,
+        id: u32,
+        path: impl AsRef<Path>,
+        block_cache: Option<Arc<BlockCache>>,
+    ) -> StorageResult<Sstable> {
         self.finish_block();
         self.buf.put_u32(self.block_count);
 
-        let block_meta_offset = self.buf.len();
+        let block_meta_offset = self.buf.len() as u32;
         BlockMeta::encode_many(&self.block_metas, &mut self.buf);
-        self.buf.put_u32(block_meta_offset as u32);
+        self.buf.put_u32(block_meta_offset);
 
-        let bloomfilter_offset = self.buf.len();
+        let bloomfilter_offset = self.buf.len() as u32;
         let bloom_filter = self.bloom_builder.build();
         bloom_filter.encode_into(&mut self.buf);
-        self.buf.put_u32(bloomfilter_offset as u32);
+        self.buf.put_u32(bloomfilter_offset);
 
-        let mut file = tokio::fs::File::create(path).await?;
-        file.write_all(&self.buf).await?;
+        let mut file = File::create(path)?;
+        file.write_all(&self.buf)?;
 
         let sstable = Sstable::new(
+            id,
             file,
             self.block_metas,
-            block_meta_offset as u64,
-            bloomfilter_offset as u64,
+            block_meta_offset,
+            bloomfilter_offset,
             Some(bloom_filter),
+            block_cache,
         );
         Ok(sstable)
     }
@@ -178,7 +184,10 @@ mod test {
                 new_table_value(v.as_bytes()),
             );
         }
-        let sstable = builder.build(path::Path::new("test.sst")).await.unwrap();
+        let sstable = builder
+            .build(0, path::Path::new("test.sst"), None)
+            .await
+            .unwrap();
         assert_eq!(sstable.block_metas.len(), 1);
         assert_eq!(sstable.block_metas[0].entries, 50);
         std::fs::remove_file("test.sst").unwrap();
@@ -196,9 +205,14 @@ mod test {
                 new_table_value(v.as_bytes()),
             );
         }
-        let sstable = builder.build(path::Path::new("test.sst")).await.unwrap();
+        let sstable = builder
+            .build(0, path::Path::new("test.sst"), None)
+            .await
+            .unwrap();
 
-        let sstable_from_file = Sstable::open(path::Path::new("test.sst")).await.unwrap();
+        let sstable_from_file = Sstable::open(0, path::Path::new("test.sst"), None)
+            .await
+            .unwrap();
         assert_eq!(sstable.block_metas, sstable_from_file.block_metas);
         assert_eq!(sstable.bloom_filter, sstable_from_file.bloom_filter);
         std::fs::remove_file("test.sst").unwrap();

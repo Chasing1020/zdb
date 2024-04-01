@@ -10,6 +10,8 @@ pub enum StorageError {
     DecodeError(String),
     #[error("IO error: {0}")]
     IOError(#[from] std::io::Error),
+    #[error("Block not found error: {0}")]
+    BlockNotFoundError(u32),
 }
 
 impl StorageError {

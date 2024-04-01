@@ -97,6 +97,16 @@ impl<T: AsRef<[u8]>> TableValue<T> {
     }
 }
 
+impl<'a> TableValue<&'a [u8]> {
+    pub fn decode(buf: &'a [u8]) -> Self {
+        match buf[0] {
+            VALUE_PUT => TableValue::Put(&buf[1..]),
+            VALUE_DELETE => TableValue::Delete,
+            _ => unreachable!(),
+        }
+    }
+}
+
 impl EstimateSize for TableValue<Bytes> {
     #[inline]
     fn estimated_heap_size(&self) -> usize {

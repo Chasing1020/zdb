@@ -2,7 +2,10 @@ pub mod builder;
 pub mod iterator;
 pub mod prefix;
 
-use std::io::{Read, Write};
+use std::{
+    io::{Read, Write},
+    sync::Arc,
+};
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
@@ -43,6 +46,10 @@ impl CompressionType {
     }
 }
 
+// BlockCache is a cache for block.
+// K: (sstable_id, block_id)
+pub type BlockCache = moka::future::Cache<(u32, u32), Arc<Block>>;
+
 // Block is the basic unit of storage in the SSTable file.
 // It contains the uncompressed data and restart points.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -53,7 +60,7 @@ pub struct Block {
     pub entry_count: usize,
     // restart points
     pub restart_points: Vec<u32>,
-    // restart interval
+    // restart interval·
     pub restart_interval: usize,
     // compression type
     pub compression_type: CompressionType,
@@ -63,7 +70,7 @@ impl Block {
     pub fn get_first_key(&self) -> TableKey<&[u8]> {
         let prefix = EntryPrefix::decode(&self.uncompressed_data, 0);
         let key = &self.uncompressed_data[prefix.unshared_key_range()];
-        TableKey::decode(key).unwrap()
+        TableKey::decode(key)
     }
 
     #[inline]
