@@ -116,11 +116,9 @@ mod tests {
         TableValue::Put(value)
     }
 
-    #[tokio::test]
-    async fn test_sstable_iterator() {
+    async fn build_sstable_iterator_for_test() -> SstableIterator {
         let mut builder = SstableBuilder::new(SstableBuilderOptions::default());
-        let keys = 1000;
-        for i in 0..keys {
+        for i in 0..1000 {
             let k = format!("key{}", i);
             let v = format!("value{}", i);
             builder.add(
@@ -132,7 +130,27 @@ mod tests {
             .build(0, path::Path::new("test.sst"), None)
             .await
             .unwrap();
-        let mut iter = SstableIterator::new(Arc::new(sstable)).await.unwrap();
+        SstableIterator::new(Arc::new(sstable)).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_sstable_iterator_next() {
+        let mut iter = build_sstable_iterator_for_test().await;
+        for i in 0..1000 {
+            iter.next().await.unwrap();
+            assert_eq!(iter.key().user_key.0, format!("key{}", i).as_bytes());
+            assert_eq!(
+                iter.value(),
+                TableValue::Put(format!("value{}", i).as_bytes())
+            );
+        }
+        iter.next().await.unwrap();
+        assert!(!iter.is_valid());
+    }
+
+    #[tokio::test]
+    async fn test_sstable_iterator_seek() {
+        let mut iter = build_sstable_iterator_for_test().await;
         iter.seek_to_key(new_table_key(format!("key{}", 500).as_bytes(), 0))
             .await
             .unwrap();
