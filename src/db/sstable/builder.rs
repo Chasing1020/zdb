@@ -1,6 +1,6 @@
-use std::{fs::File, io::Write, path::Path, sync::Arc};
+use std::{path::Path, sync::Arc};
 
-use super::{filter::BloomBuilder, BlockMeta, Sstable};
+use super::{file::FileObject, filter::BloomBuilder, BlockMeta, Sstable};
 use crate::db::{
     block::{
         builder::{
@@ -103,11 +103,13 @@ impl SstableBuilder {
             .last()
             .map_or(0, |meta| meta.offset + meta.len);
 
+        let before_len = self.buf.len();
         block.encode_into(&mut self.buf);
+        let block_len = self.buf.len() - before_len;
 
         self.block_metas.push(BlockMeta::new(
             last_offset,
-            block.uncompressed_len() as u32,
+            block_len as u32,
             block.entry_count as u32,
             block.get_first_key().to_bytes(),
             last_key,
@@ -135,8 +137,7 @@ impl SstableBuilder {
         bloom_filter.encode_into(&mut self.buf);
         self.buf.put_u32(bloomfilter_offset);
 
-        let mut file = File::create(path)?;
-        file.write_all(&self.buf)?;
+        let file = FileObject::create(&path, &self.buf)?;
 
         let sstable = Sstable::new(
             id,

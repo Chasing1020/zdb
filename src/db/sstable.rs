@@ -1,14 +1,14 @@
 pub mod builder;
+pub mod file;
 pub mod filter;
 pub mod iterator;
 
-use std::os::unix::fs::FileExt;
 use std::path::Path;
 use std::sync::Arc;
 
-use bytes::{Buf, BufMut, Bytes, BytesMut};
-use std::fs::File;
+use bytes::{Buf, BufMut, Bytes};
 
+use self::file::FileObject;
 use self::filter::Bloom;
 
 use super::block::{Block, BlockCache};
@@ -93,7 +93,7 @@ pub struct Sstable {
     // Sstable id.
     pub id: u32,
     // Async file.
-    pub file: File,
+    pub file: FileObject,
     // Block metas.
     pub block_metas: Vec<BlockMeta>,
     // block meta offset.
@@ -109,7 +109,7 @@ pub struct Sstable {
 impl Sstable {
     pub fn new(
         id: u32,
-        file: File,
+        file: FileObject,
         block_metas: Vec<BlockMeta>,
         block_meta_offset: u32,
         bloomfilter_offset: u32,
@@ -132,10 +132,10 @@ impl Sstable {
         path: impl AsRef<Path>,
         block_cache: Option<Arc<BlockCache>>,
     ) -> StorageResult<Sstable> {
-        let file = File::open(path)?;
-        let len = file.metadata().unwrap().len() as usize;
-        let mut buf = vec![0; len];
-        file.read_at(&mut buf, 0)?;
+        let file = FileObject::open(&path)?;
+        let len = file.size();
+        let mut buf = vec![0; len as usize];
+        file.read_to(&mut buf, 0)?;
 
         let bloomfilter_offset = (&buf[buf.len() - 4..]).get_u32();
         let bloom_filter = Some(Bloom::decode(
@@ -180,10 +180,9 @@ impl Sstable {
             .block_metas
             .get(block_id as usize)
             .ok_or_else(|| StorageError::BlockNotFoundError(block_id))?;
-        let mut buf = BytesMut::with_capacity(block_meta.len as usize);
+        let mut buf = vec![0; block_meta.len as usize];
         // TODO: read_exact_at is not async, need to be fixed?
-        self.file
-            .read_exact_at(buf.as_mut(), block_meta.offset as u64)?;
+        self.file.read_to(&mut buf, block_meta.offset as u64)?;
 
         Ok(Arc::new(Block::decode(&buf)))
     }

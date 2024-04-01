@@ -119,7 +119,7 @@ mod tests {
     #[tokio::test]
     async fn test_sstable_iterator() {
         let mut builder = SstableBuilder::new(SstableBuilderOptions::default());
-        let keys = 1;
+        let keys = 1000;
         for i in 0..keys {
             let k = format!("key{}", i);
             let v = format!("value{}", i);
@@ -132,15 +132,14 @@ mod tests {
             .build(0, path::Path::new("test.sst"), None)
             .await
             .unwrap();
-        // TODO: fixme!
         let mut iter = SstableIterator::new(Arc::new(sstable)).await.unwrap();
-        iter.seek_to_key(new_table_key(format!("key{}", 1).as_bytes(), 0))
+        iter.seek_to_key(new_table_key(format!("key{}", 500).as_bytes(), 0))
             .await
             .unwrap();
-        assert_eq!(iter.key().user_key.0, format!("key{}", 1).as_bytes());
+        assert_eq!(iter.key().user_key.0, format!("key{}", 500).as_bytes());
         assert_eq!(
             iter.value(),
-            TableValue::Put(format!("value{}", 1).as_bytes())
+            TableValue::Put(format!("value{}", 500).as_bytes())
         );
     }
 }
