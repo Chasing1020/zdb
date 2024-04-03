@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use super::{
-    block::builder::DEFAULT_BLOCK_SIZE,
+    block::builder::{DEFAULT_BLOCK_CACHE_CAPACITY, DEFAULT_BLOCK_SIZE},
     memtable::MemTable,
     sstable::{builder::DEFAULT_SSTABLE_SIZE, Sstable},
 };
@@ -30,6 +30,8 @@ pub struct StorageState {
 pub struct StorageOptions {
     /// Block size.
     pub block_size: usize,
+    /// Block cache capacity.
+    pub block_cache_capacity: usize,
     /// SST size, which is the target size of SSTable.
     pub target_sst_size: usize,
     // Maximum immutable number of memtables in memory.
@@ -40,6 +42,7 @@ impl Default for StorageOptions {
     fn default() -> Self {
         StorageOptions {
             block_size: DEFAULT_BLOCK_SIZE,
+            block_cache_capacity: DEFAULT_BLOCK_CACHE_CAPACITY,
             target_sst_size: DEFAULT_SSTABLE_SIZE,
             imm_memtable_limit: IMM_MEM_TABLE_LIMIT,
         }

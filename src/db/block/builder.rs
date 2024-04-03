@@ -7,6 +7,7 @@ use crate::db::format::{key::TableKey, size::EstimateSize, value::TableValue};
 use integer_encoding::*;
 
 pub const DEFAULT_BLOCK_SIZE: usize = 4096;
+pub const DEFAULT_BLOCK_CACHE_CAPACITY: usize = 10;
 pub const DEFAULT_RESTART_INTERVAL: usize = 16;
 
 // BlockBuilderOptions is used to create a new BlockBuilder.
