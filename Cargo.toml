@@ -1,9 +1,9 @@
 [package]
-name = "leveldb"
+name = "zdb"
 version = "0.1.0"
 edition = "2021"
 authors = ["Chasing1020"]
-description = "Reimplementation of LevelDB in Rust"
+description = "A local key-value storage engine, inspired by LevelDB and RocksDB."
 license = "Apache-2.0"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
