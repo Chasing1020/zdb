@@ -19,7 +19,7 @@ pub trait StorageIterator {
     fn is_valid(&self) -> bool;
 
     /// Move to the next position.
-    fn next(&mut self) -> StorageResult<()>;
+    fn next(&mut self) -> impl std::future::Future<Output = StorageResult<()>>;
 
     /// Number of underlying active iterators for this iterator.
     fn num_active_iterators(&self) -> usize {

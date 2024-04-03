@@ -109,7 +109,7 @@ impl StorageIterator for MemTableIterator {
         !self.borrow_item().0.is_empty()
     }
 
-    fn next(&mut self) -> StorageResult<()> {
+    async fn next(&mut self) -> StorageResult<()> {
         let entry = self.with_iter_mut(|iter| Self::entry_to_item(iter.next()));
         self.with_mut(|x| *x.item = entry);
         Ok(())
@@ -135,8 +135,8 @@ mod tests {
         assert_eq!(memtable.get(&key).unwrap(), value);
     }
 
-    #[test]
-    fn test_memtable_iterator() {
+    #[tokio::test]
+    async fn test_memtable_iterator() {
         let memtable = MemTable::new(0);
         // gen test
         let key1 = TableKey::new(UserKey(Bytes::from("key1".as_bytes())), 0);
@@ -153,12 +153,12 @@ mod tests {
         assert_eq!(iter.value(), value1);
         assert!(iter.is_valid());
 
-        iter.next().unwrap();
+        iter.next().await.unwrap();
         assert_eq!(iter.key(), key2);
         assert_eq!(iter.value(), value2);
         assert!(iter.is_valid());
 
-        iter.next().unwrap();
+        iter.next().await.unwrap();
         assert!(!iter.is_valid());
     }
 }
