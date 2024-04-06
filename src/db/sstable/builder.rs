@@ -138,6 +138,14 @@ impl SstableBuilder {
         self.buf.put_u32(bloomfilter_offset);
 
         let file = FileObject::create(&path, &self.buf)?;
+        let first_key = self
+            .block_metas
+            .first()
+            .map_or(TableKey::default(), |meta| meta.first_key().clone());
+        let last_key = self
+            .block_metas
+            .last()
+            .map_or(TableKey::default(), |meta| meta.last_key().clone());
 
         let sstable = Sstable::new(
             id,
@@ -147,6 +155,8 @@ impl SstableBuilder {
             bloomfilter_offset,
             Some(bloom_filter),
             block_cache,
+            first_key,
+            last_key,
         );
         Ok(sstable)
     }

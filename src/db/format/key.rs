@@ -61,6 +61,12 @@ impl<T: AsRef<[u8]>> Borrow<[u8]> for UserKey<T> {
     }
 }
 
+impl UserKey<Bytes> {
+    fn as_slice_key(&self) -> UserKey<&[u8]> {
+        UserKey(self.as_ref())
+    }
+}
+
 impl<T: AsRef<[u8]>> UserKey<T> {
     #[inline]
     pub fn len(&self) -> usize {
@@ -168,6 +174,10 @@ impl TableKey<Bytes> {
             user_key: UserKey(buf.slice(0..buf.len() - INTERAL_SUFFIX_LEN)),
             seq,
         }
+    }
+
+    pub fn as_slice_key(&self) -> TableKey<&[u8]> {
+        TableKey::new(self.user_key.as_slice_key(), self.seq)
     }
 }
 

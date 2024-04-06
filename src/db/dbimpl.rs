@@ -1,12 +1,12 @@
-use std::{os::macos::raw::stat, path::{Path, PathBuf}, sync::{Arc, RwLock}};
+use std::{path::{Path, PathBuf}, sync::{Arc, RwLock}};
 
 use super::{block::BlockCache, storage::{StorageOptions, StorageState}};
 
 pub struct DBImpl {
-    pub(crate) path: PathBuf,
-    pub(crate) state: Arc<RwLock<StorageState>>,
-    pub(crate) block_cache: Arc<BlockCache>,
-    pub(crate) options: Arc<StorageOptions>,
+    pub path: PathBuf,
+    pub state: Arc<RwLock<StorageState>>,
+    pub block_cache: Arc<BlockCache>,
+    pub options: Arc<StorageOptions>,
 }
 
 impl DBImpl {

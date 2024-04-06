@@ -20,7 +20,7 @@ impl SstableIterator {
         Ok((0, BlockIterator::new(table.get_block(0).await?)))
     }
 
-    pub async fn new(table: Arc<Sstable>) -> StorageResult<Self> {
+    pub async fn create_and_seek_to_first(table: Arc<Sstable>) -> StorageResult<Self> {
         let (block_idx, block_iterator) = Self::seek_to_first_inner(&table).await?;
         let iter = Self {
             block_iterator,
@@ -130,7 +130,7 @@ mod tests {
             .build(0, path::Path::new("test.sst"), None)
             .await
             .unwrap();
-        SstableIterator::new(Arc::new(sstable)).await.unwrap()
+        SstableIterator::create_and_seek_to_first(Arc::new(sstable)).await.unwrap()
     }
 
     #[tokio::test]

@@ -87,6 +87,14 @@ impl BlockMeta {
         (0..len).for_each(|_| block_metas.push(BlockMeta::decode_from(buf)));
         block_metas
     }
+
+    pub fn first_key(&self) -> &TableKey<Bytes> {
+        &self.first_key
+    }
+
+    pub fn last_key(&self) -> &TableKey<Bytes> {
+        &self.last_key
+    }
 }
 
 pub struct Sstable {
@@ -104,9 +112,14 @@ pub struct Sstable {
     pub bloom_filter: Option<Bloom>,
     // block cache.
     pub block_cache: Option<Arc<BlockCache>>,
+    // first_key.
+    pub first_key: TableKey<Bytes>,
+    // last_key.
+    pub last_key: TableKey<Bytes>,
 }
 
 impl Sstable {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: u32,
         file: FileObject,
@@ -115,6 +128,8 @@ impl Sstable {
         bloomfilter_offset: u32,
         bloom_filter: Option<Bloom>,
         block_cache: Option<Arc<BlockCache>>,
+        first_key: TableKey<Bytes>,
+        last_key: TableKey<Bytes>,
     ) -> Self {
         Sstable {
             id,
@@ -124,6 +139,8 @@ impl Sstable {
             bloomfilter_offset,
             bloom_filter,
             block_cache,
+            first_key,
+            last_key,
         }
     }
 
@@ -147,6 +164,8 @@ impl Sstable {
         let block_metas = BlockMeta::decode_many(
             &mut &buf[block_meta_offset as usize..bloomfilter_offset as usize - 4],
         );
+        let first_key = block_metas.first().map(|meta| meta.first_key.clone()).unwrap();
+        let last_key = block_metas.last().map(|meta| meta.last_key.clone()).unwrap();
         Ok(Sstable::new(
             id,
             file,
@@ -155,6 +174,8 @@ impl Sstable {
             bloomfilter_offset,
             bloom_filter,
             block_cache,
+            first_key,
+            last_key,
         ))
     }
 
@@ -190,5 +211,13 @@ impl Sstable {
     #[inline]
     pub fn block_num(&self) -> usize {
         self.block_metas.len()
+    }
+
+    pub fn first_key(&self) -> &TableKey<Bytes> {
+        &self.first_key
+    }
+
+    pub fn last_key(&self) -> &TableKey<Bytes> {
+        &self.last_key
     }
 }
