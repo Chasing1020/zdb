@@ -130,7 +130,9 @@ mod tests {
             .build(0, path::Path::new("test.sst"), None)
             .await
             .unwrap();
-        SstableIterator::create_and_seek_to_first(Arc::new(sstable)).await.unwrap()
+        SstableIterator::create_and_seek_to_first(Arc::new(sstable))
+            .await
+            .unwrap()
     }
 
     #[tokio::test]

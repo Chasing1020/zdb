@@ -22,7 +22,7 @@ pub struct StorageState {
     pub mem_table: MemTable,
     /// The immutable memtables.
     pub imm_mem_tables: Vec<MemTable>,
-    /// The sstables in each level.
+    /// The sstables in each level, from level 0 to max_level.
     pub levels: Vec<LevelMeta>,
 }
 

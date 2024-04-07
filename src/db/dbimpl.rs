@@ -1,6 +1,12 @@
-use std::{path::{Path, PathBuf}, sync::{Arc, RwLock}};
+use std::{
+    path::{Path, PathBuf},
+    sync::{Arc, RwLock},
+};
 
-use super::{block::BlockCache, storage::{StorageOptions, StorageState}};
+use super::{
+    block::BlockCache,
+    storage::{StorageOptions, StorageState},
+};
 
 pub struct DBImpl {
     pub path: PathBuf,
@@ -15,7 +21,7 @@ impl DBImpl {
         let path = path.as_ref().to_path_buf();
         let state = Arc::new(RwLock::new(StorageState::default()));
         let block_cache = Arc::new(BlockCache::new(options.block_cache_capacity as u64));
-        
+
         DBImpl {
             path,
             state,

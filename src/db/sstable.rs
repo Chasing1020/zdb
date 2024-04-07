@@ -164,8 +164,14 @@ impl Sstable {
         let block_metas = BlockMeta::decode_many(
             &mut &buf[block_meta_offset as usize..bloomfilter_offset as usize - 4],
         );
-        let first_key = block_metas.first().map(|meta| meta.first_key.clone()).unwrap();
-        let last_key = block_metas.last().map(|meta| meta.last_key.clone()).unwrap();
+        let first_key = block_metas
+            .first()
+            .map(|meta| meta.first_key.clone())
+            .unwrap();
+        let last_key = block_metas
+            .last()
+            .map(|meta| meta.last_key.clone())
+            .unwrap();
         Ok(Sstable::new(
             id,
             file,
@@ -208,7 +214,6 @@ impl Sstable {
         Ok(Arc::new(Block::decode(&buf)))
     }
 
-    #[inline]
     pub fn block_num(&self) -> usize {
         self.block_metas.len()
     }
@@ -219,5 +224,13 @@ impl Sstable {
 
     pub fn last_key(&self) -> &TableKey<Bytes> {
         &self.last_key
+    }
+
+    pub fn table_size(&self) -> u64 {
+        self.file.size()
+    }
+
+    pub fn id(&self) -> u32 {
+        self.id
     }
 }
