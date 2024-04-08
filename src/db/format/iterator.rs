@@ -1,6 +1,5 @@
 use crate::db::error::StorageResult;
 
-#[async_trait::async_trait]
 pub trait StorageIterator {
     type KeyType<'a>: PartialEq + Eq + PartialOrd + Ord
     where

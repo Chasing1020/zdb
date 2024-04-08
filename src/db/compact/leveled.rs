@@ -1,4 +1,12 @@
-use crate::db::{error::StorageResult, storage::StorageState};
+use std::collections::{BTreeMap, HashSet};
+
+use tokio::sync::{RwLockReadGuard, RwLockWriteGuard};
+
+use crate::db::{
+    error::StorageResult,
+    format::{concat_iterator::SstConcatIterator, two_merge_iterator::TwoMergeIterator},
+    storage::StorageState,
+};
 
 use super::picker::{CompactionTask, Picker};
 
@@ -20,14 +28,42 @@ pub struct LeveledCompactionOptions {
 
 pub struct LeveledCompactionTask {
     pub source_level: usize,
-    pub source_sst_ids: Vec<u32>,
+    pub source_ids: Vec<u32>,
     pub target_level: usize,
-    pub target_sst_ids: Vec<u32>,
+    pub target_ids: Vec<u32>,
 }
 
 #[async_trait::async_trait]
 impl CompactionTask for LeveledCompactionTask {
-    async fn run(&mut self) -> StorageResult<()> {
+    async fn run(&mut self, state: &mut RwLockWriteGuard<'_, StorageState>) -> StorageResult<()> {
+        // let mut files_to_remove = vec![];
+        let source_id_set = self.source_ids.iter().copied().collect::<HashSet<_>>();
+        let target_id_set = self.target_ids.iter().copied().collect::<HashSet<_>>();
+        let source_tables = state.levels[self.source_level]
+            .tables
+            .iter()
+            .filter(|table| source_id_set.contains(&table.id()))
+            .cloned()
+            .collect::<Vec<_>>();
+        let target_tables = state.levels[self.target_level]
+            .tables
+            .iter()
+            .filter(|table| target_id_set.contains(&table.id()))
+            .cloned()
+            .collect::<Vec<_>>();
+        let soure_table_iter = SstConcatIterator::create_and_seek_to_first(source_tables).await?;
+        let target_table_iter = SstConcatIterator::create_and_seek_to_first(target_tables).await?;
+
+        let _iter = TwoMergeIterator::create(soure_table_iter, target_table_iter);
+        // TODO: Generate new SSTable from iter with new key sequence.
+
+        state.levels[self.source_level]
+            .tables
+            .retain(|table| !source_id_set.contains(&table.id()));
+        state.levels[self.target_level]
+            .tables
+            .retain(|table| !target_id_set.contains(&table.id()));
+
         unimplemented!()
     }
 }
@@ -40,10 +76,49 @@ impl LeveledCompactionPicker {
     pub fn new(options: LeveledCompactionOptions) -> Self {
         LeveledCompactionPicker { options }
     }
+
+    pub fn find_overlaped_target_ids(
+        state: RwLockReadGuard<'_, StorageState>,
+        source_level: usize,
+        source_ids: &[u32],
+        target_level: usize,
+    ) -> Vec<u32> {
+        let soure_ssts = state.levels[source_level]
+            .tables
+            .iter()
+            .filter(|t| source_ids.contains(&t.id()))
+            .collect::<Vec<_>>();
+        let begin_key = soure_ssts
+            .iter()
+            .map(|t| t.first_key())
+            .min()
+            .unwrap()
+            .clone();
+        let end_key = soure_ssts
+            .iter()
+            .map(|t| t.last_key())
+            .max()
+            .unwrap()
+            .clone();
+        state.levels[target_level]
+            .tables
+            .iter()
+            .filter_map(|t| {
+                if t.first_key() <= &begin_key && t.last_key() >= &end_key {
+                    Some(t.id())
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
 }
 
 impl Picker for LeveledCompactionPicker {
-    fn pick(&self, state: &StorageState) -> Option<Box<dyn super::picker::CompactionTask>> {
+    fn pick(
+        &self,
+        state: RwLockReadGuard<'_, StorageState>,
+    ) -> Option<Box<dyn super::picker::CompactionTask>> {
         let mut target_level_size = vec![0; self.options.max_levels];
         let mut real_level_size = vec![0; self.options.max_levels];
 
@@ -73,15 +148,43 @@ impl Picker for LeveledCompactionPicker {
             }
         });
 
+        // flush L0 to base level
         if state.levels[0].tables.len() >= self.options.level0_file_num_compaction_trigger {
+            let source_ids = state.levels[0]
+                .tables
+                .iter()
+                .map(|t| t.id())
+                .collect::<Vec<_>>();
+            let target_ids = Self::find_overlaped_target_ids(state, 0, &source_ids, base_level);
             return Some(Box::new(LeveledCompactionTask {
                 source_level: 0,
-                source_sst_ids: state.levels[0].tables.iter().map(|t| t.id()).collect(),
+                source_ids,
                 target_level: base_level,
-                target_sst_ids: vec![], // TODO: to check overlap
+                target_ids,
             }));
         }
 
-        todo!()
+        let mut scores = BTreeMap::new();
+        (1..self.options.max_levels).for_each(|i| {
+            let score = real_level_size[i] as f64 / target_level_size[i] as f64;
+            if score > 1.0 {
+                scores.insert(i, score);
+            }
+        });
+
+        // Pick the level with the highest score.
+        let level = scores.iter().next().map(|(i, _)| *i)?;
+        let sourcd_id = state.levels[level + 1]
+            .tables
+            .iter()
+            .map(|table| table.id())
+            .max()?;
+
+        Some(Box::new(LeveledCompactionTask {
+            source_level: level,
+            source_ids: vec![sourcd_id],
+            target_level: level + 1,
+            target_ids: Self::find_overlaped_target_ids(state, level, &[sourcd_id], level + 1),
+        }))
     }
 }

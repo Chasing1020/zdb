@@ -25,6 +25,17 @@ impl SstConcatIterator {
         true
     }
 
+    pub async fn create_and_seek_to_first(sstables: Vec<Arc<Sstable>>) -> StorageResult<Self> {
+        debug_assert!(Self::can_concat(sstables.clone()));
+        let mut iter = Self {
+            current: Some(SstableIterator::create_and_seek_to_first(sstables[0].clone()).await?),
+            next_sst_idx: 1,
+            sstables,
+        };
+        iter.move_until_valid().await?;
+        Ok(iter)
+    }
+
     pub async fn create_and_seek_to_key(
         sstables: Vec<Arc<Sstable>>,
         key: TableKey<&[u8]>,
