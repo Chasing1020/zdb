@@ -3,7 +3,7 @@ use std::{ops::Bound, sync::Arc};
 use bytes::Bytes;
 use parking_lot::RwLock;
 
-use crate::db::format::key::TableKey;
+use crate::db::format::key::{TableKey, MAX_TS_NUM, MIN_TS_NUM};
 
 use super::{
     block::builder::{DEFAULT_BLOCK_CACHE_CAPACITY, DEFAULT_BLOCK_SIZE},
@@ -82,8 +82,8 @@ impl StorageManager {
         let mut memtable_iters = Vec::with_capacity(state.imm_mem_tables.len() + 1);
 
         memtable_iters.push(Box::new(state.mem_table.scan((
-            Bound::Included(TableKey::from_slice(key, 0)),
-            Bound::Included(TableKey::from_slice(key, 0)),
+            Bound::Included(TableKey::from_slice(key, MIN_TS_NUM)),
+            Bound::Included(TableKey::from_slice(key, MAX_TS_NUM)),
         ))));
 
         todo!()

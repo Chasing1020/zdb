@@ -51,10 +51,10 @@ impl CompactionTask for LeveledCompactionTask {
             .filter(|table| target_id_set.contains(&table.id()))
             .cloned()
             .collect::<Vec<_>>();
-        let soure_table_iter = SstConcatIterator::create_and_seek_to_first(source_tables).await?;
+        let source_table_iter = SstConcatIterator::create_and_seek_to_first(source_tables).await?;
         let target_table_iter = SstConcatIterator::create_and_seek_to_first(target_tables).await?;
 
-        let _iter = TwoMergeIterator::create(soure_table_iter, target_table_iter);
+        let _iter = TwoMergeIterator::create(source_table_iter, target_table_iter);
         // TODO: Generate new SSTable from iter with new key sequence.
 
         state.levels[self.source_level]
@@ -77,24 +77,24 @@ impl LeveledCompactionPicker {
         LeveledCompactionPicker { options }
     }
 
-    pub fn find_overlaped_target_ids(
+    pub fn find_overlapped_target_ids(
         state: RwLockReadGuard<'_, StorageState>,
         source_level: usize,
         source_ids: &[u32],
         target_level: usize,
     ) -> Vec<u32> {
-        let soure_ssts = state.levels[source_level]
+        let source_ssts = state.levels[source_level]
             .tables
             .iter()
             .filter(|t| source_ids.contains(&t.id()))
             .collect::<Vec<_>>();
-        let begin_key = soure_ssts
+        let begin_key = source_ssts
             .iter()
             .map(|t| t.first_key())
             .min()
             .unwrap()
             .clone();
-        let end_key = soure_ssts
+        let end_key = source_ssts
             .iter()
             .map(|t| t.last_key())
             .max()
@@ -155,7 +155,7 @@ impl Picker for LeveledCompactionPicker {
                 .iter()
                 .map(|t| t.id())
                 .collect::<Vec<_>>();
-            let target_ids = Self::find_overlaped_target_ids(state, 0, &source_ids, base_level);
+            let target_ids = Self::find_overlapped_target_ids(state, 0, &source_ids, base_level);
             return Some(Box::new(LeveledCompactionTask {
                 source_level: 0,
                 source_ids,
@@ -174,7 +174,7 @@ impl Picker for LeveledCompactionPicker {
 
         // Pick the level with the highest score.
         let level = scores.iter().next().map(|(i, _)| *i)?;
-        let sourcd_id = state.levels[level + 1]
+        let source_id = state.levels[level + 1]
             .tables
             .iter()
             .map(|table| table.id())
@@ -182,9 +182,9 @@ impl Picker for LeveledCompactionPicker {
 
         Some(Box::new(LeveledCompactionTask {
             source_level: level,
-            source_ids: vec![sourcd_id],
+            source_ids: vec![source_id],
             target_level: level + 1,
-            target_ids: Self::find_overlaped_target_ids(state, level, &[sourcd_id], level + 1),
+            target_ids: Self::find_overlapped_target_ids(state, level, &[source_id], level + 1),
         }))
     }
 }

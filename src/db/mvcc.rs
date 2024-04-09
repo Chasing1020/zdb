@@ -56,12 +56,12 @@ pub struct CommittedTxnData {
 
 /// `MvccManager` is responsible for generating timestamps and managing transactions.
 pub struct MvccManager {
-    /// `curr_ts` is the latest commited timestamp. It updates when any txn commits.
+    /// `curr_ts` is the latest committed timestamp. It updates when any txn commits.
     curr_ts: AtomicU64,
     /// `reader_counter` is the lowest read timestamp among all in-progress transactions.
     reader_counter: Arc<RwLock<ReaderCounter>>,
-    /// `commited_txn_data` stores current committed transaction data.
-    pub commited_txn_data: Arc<RwLock<BTreeMap<u64, CommittedTxnData>>>,
+    /// `committed_txn_data` stores current committed transaction data.
+    pub committed_txn_data: Arc<RwLock<BTreeMap<u64, CommittedTxnData>>>,
 }
 
 impl MvccManager {
@@ -69,7 +69,7 @@ impl MvccManager {
         Self {
             curr_ts: AtomicU64::new(init_ts),
             reader_counter: Arc::new(RwLock::new(ReaderCounter::new())),
-            commited_txn_data: Arc::new(RwLock::new(BTreeMap::new())),
+            committed_txn_data: Arc::new(RwLock::new(BTreeMap::new())),
         }
     }
 
@@ -78,7 +78,7 @@ impl MvccManager {
         self.curr_ts.load(std::sync::atomic::Ordering::Acquire)
     }
 
-    /// `update_curr_ts` updates the latest commited timestamp.
+    /// `update_curr_ts` updates the latest committed timestamp.
     #[inline]
     pub fn update_curr_ts(&self, ts: u64) {
         self.curr_ts.store(ts, std::sync::atomic::Ordering::Release);

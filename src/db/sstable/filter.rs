@@ -107,7 +107,7 @@ impl Bloom {
         true
     }
 
-    /// Chech and set the hash
+    /// Check and set the hash
     /// Return true if the item is already in the filter
     pub fn check_and_set(&mut self, hash: u32) -> bool {
         let mut h = hash;

@@ -13,7 +13,7 @@ pub type Timestamp = u64;
 
 pub const MIN_TS_NUM: Timestamp = Timestamp::MIN;
 pub const MAX_TS_NUM: Timestamp = Timestamp::MAX;
-pub const INTERAL_SUFFIX_LEN: usize = mem::size_of::<Timestamp>();
+pub const INTERNAL_SUFFIX_LEN: usize = mem::size_of::<Timestamp>();
 
 pub type UserKeyRange = (Bound<UserKey<Bytes>>, Bound<UserKey<Bytes>>);
 pub type TableKeyRange = (Bound<TableKey<Bytes>>, Bound<TableKey<Bytes>>);
@@ -157,13 +157,13 @@ impl<T: AsRef<[u8]>> TableKey<T> {
     }
 
     pub fn encode(&self) -> Vec<u8> {
-        let mut buf = Vec::with_capacity(INTERAL_SUFFIX_LEN + self.user_key.len());
+        let mut buf = Vec::with_capacity(INTERNAL_SUFFIX_LEN + self.user_key.len());
         self.encode_into(&mut buf);
         buf
     }
 
     pub fn len(&self) -> usize {
-        self.user_key.len() + INTERAL_SUFFIX_LEN
+        self.user_key.len() + INTERNAL_SUFFIX_LEN
     }
 
     pub fn is_empty(&self) -> bool {
@@ -180,9 +180,9 @@ impl TableKey<Bytes> {
     }
 
     pub fn from_bytes(buf: Bytes) -> Self {
-        let seq = u64::from_le_bytes(buf[buf.len() - INTERAL_SUFFIX_LEN..].try_into().unwrap());
+        let seq = u64::from_le_bytes(buf[buf.len() - INTERNAL_SUFFIX_LEN..].try_into().unwrap());
         TableKey {
-            user_key: UserKey(buf.slice(0..buf.len() - INTERAL_SUFFIX_LEN)),
+            user_key: UserKey(buf.slice(0..buf.len() - INTERNAL_SUFFIX_LEN)),
             ts: seq,
         }
     }
@@ -194,9 +194,9 @@ impl TableKey<Bytes> {
 
 impl<'a> TableKey<&'a [u8]> {
     pub fn decode(buf: &'a [u8]) -> Self {
-        let seq = u64::from_le_bytes(buf[buf.len() - INTERAL_SUFFIX_LEN..].try_into().unwrap());
+        let seq = u64::from_le_bytes(buf[buf.len() - INTERNAL_SUFFIX_LEN..].try_into().unwrap());
         TableKey {
-            user_key: UserKey(&buf[..buf.len() - INTERAL_SUFFIX_LEN]),
+            user_key: UserKey(&buf[..buf.len() - INTERNAL_SUFFIX_LEN]),
             ts: seq,
         }
     }
