@@ -176,50 +176,51 @@ mod test {
     use crate::db::format::key::{TableKey, UserKey};
     use crate::db::format::value::TableValue;
 
-    pub fn new_table_key(key: &[u8], seq: u64) -> TableKey<&[u8]> {
-        TableKey::new(UserKey(key), seq)
-    }
-
-    pub fn new_table_value(value: &[u8]) -> TableValue<&[u8]> {
-        TableValue::Put(value)
+    pub fn mock_kvs(nums: usize) -> Vec<(TableKey<Bytes>, TableValue<Bytes>)> {
+        let mut vec = Vec::with_capacity(nums);
+        let keys = nums;
+        for i in 0..keys {
+            let k = format!("key{}", i);
+            let v = format!("value{}", i);
+            vec.push((
+                TableKey::new(UserKey(Bytes::from(k)), 0),
+                TableValue::put(Bytes::from(v)),
+            ));
+        }
+        vec
     }
 
     #[tokio::test]
     async fn test_sstable_builder() {
         let mut builder = SstableBuilder::new(SstableBuilderOptions::default());
-        for i in 0..50 {
-            let k = format!("key{}", i);
-            let v = format!("value{}", i);
-            builder.add(
-                new_table_key(k.as_bytes(), 0),
-                new_table_value(v.as_bytes()),
-            );
+        let kvs = mock_kvs(50);
+        for (k, v) in kvs.iter() {
+            builder.add(k.as_slice_key(), v.as_slice());
         }
         let sstable = builder
             .build(0, path::Path::new("test.sst"), None)
             .await
             .unwrap();
         assert_eq!(sstable.block_metas.len(), 1);
-        assert_eq!(sstable.block_metas[0].entries, 50);
+        assert_eq!(sstable.block_metas[0].entries, kvs.len() as u32);
         std::fs::remove_file("test.sst").unwrap();
     }
 
     #[tokio::test]
     async fn test_sstable_build_and_open() {
         let mut builder = SstableBuilder::new(SstableBuilderOptions::default());
-        let keys = 10000;
-        for i in 0..keys {
-            let k = format!("key{}", i);
-            let v = format!("value{}", i);
-            builder.add(
-                new_table_key(k.as_bytes(), 0),
-                new_table_value(v.as_bytes()),
-            );
+        let kvs = mock_kvs(10000);
+        for (k, v) in kvs.iter() {
+            builder.add(k.as_slice_key(), v.as_slice());
         }
         let sstable = builder
             .build(0, path::Path::new("test.sst"), None)
             .await
             .unwrap();
+
+        for (k, _v) in kvs.iter() {
+            assert!(sstable.contains(k.as_slice_key()));
+        }
 
         let sstable_from_file = Sstable::open(0, path::Path::new("test.sst"), None)
             .await

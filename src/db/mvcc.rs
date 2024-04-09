@@ -8,7 +8,7 @@ use parking_lot::RwLock;
 
 use self::transaction::Transaction;
 
-use super::storage::StorageState;
+use super::storage::StorageManager;
 
 pub mod transaction;
 pub mod view;
@@ -89,7 +89,7 @@ impl MvccManager {
         self.reader_counter.read().min_read_ts()
     }
 
-    pub fn new_txn(&self, storage: Arc<StorageState>) -> Transaction {
+    pub fn new_txn(&self, storage: Arc<StorageManager>) -> Transaction {
         let curr_ts = self.curr_ts();
         self.reader_counter.write().add_reader(curr_ts);
         Transaction::new(storage, curr_ts)

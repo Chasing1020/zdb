@@ -3,15 +3,15 @@ use std::sync::{
     Arc,
 };
 
-use crate::db::{error::StorageResult, storage::StorageState};
+use crate::db::{error::StorageResult, storage::StorageManager};
 
 /// `Transaction` represents a transaction in the MVCC model that can modify the storage
 pub struct Transaction {
     /// `start_ts` is the start timestamp of the transaction.
     read_ts: u64,
     /// `storage` is the storage state that the transaction reads and writes.
-    storage: Arc<StorageState>,
-    /// `is_committed` indicates whether the transaction is committed.
+    storage: Arc<StorageManager>,
+    /// `committed` indicates whether the transaction is committed.
     committed: AtomicBool,
 }
 
@@ -27,13 +27,13 @@ impl Drop for Transaction {
 }
 
 impl Transaction {
-    pub fn new(storage: Arc<StorageState>, read_ts: u64) -> Self {
+    pub fn new(storage: Arc<StorageManager>, read_ts: u64) -> Self {
         storage
             .mvcc_manager()
             .reader_counter
             .write()
             .add_reader(read_ts);
-        Transaction {
+        Self {
             read_ts,
             storage,
             committed: AtomicBool::new(false),

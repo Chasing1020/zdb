@@ -15,6 +15,8 @@ pub const INTERAL_SUFFIX_LEN: usize = mem::size_of::<SeqNumber>();
 pub type SeqNumber = u64;
 pub type UserKeyRange = (Bound<UserKey<Bytes>>, Bound<UserKey<Bytes>>);
 pub type TableKeyRange = (Bound<TableKey<Bytes>>, Bound<TableKey<Bytes>>);
+pub type UserKeyRangeRef<'a> = (Bound<UserKey<&'a [u8]>>, Bound<UserKey<&'a [u8]>>);
+pub type TableKeyRangeRef<'a> = (Bound<TableKey<&'a [u8]>>, Bound<TableKey<&'a [u8]>>);
 
 /// A UserKey is the actual key supplied by the calling application, without any internal
 /// decorations.

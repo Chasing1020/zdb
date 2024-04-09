@@ -214,6 +214,16 @@ impl Sstable {
         Ok(Arc::new(Block::decode(&buf)))
     }
 
+    /// `contains` Check if the sstable contains the key.
+    pub fn contains(&self, key: TableKey<&[u8]>) -> bool {
+        if self.first_key.as_ref() <= key && key <= self.last_key.as_ref() {
+            if let Some(bloom) = &self.bloom_filter {
+                return bloom.check(farmhash::hash32(key.encode().as_ref()));
+            }
+        }
+        false
+    }
+
     pub fn block_num(&self) -> usize {
         self.block_metas.len()
     }

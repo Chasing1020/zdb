@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use parking_lot::RwLock;
+
 use super::{
     block::builder::{DEFAULT_BLOCK_CACHE_CAPACITY, DEFAULT_BLOCK_SIZE},
     memtable::MemTable,
@@ -48,8 +50,6 @@ pub struct StorageState {
     pub imm_mem_tables: Vec<MemTable>,
     /// The sstables in each level, from level 0 to max_level.
     pub levels: Vec<LevelMeta>,
-    /// The MVCC manager.
-    pub mvcc_manager: Arc<MvccManager>,
 }
 
 impl Default for StorageState {
@@ -58,12 +58,23 @@ impl Default for StorageState {
             mem_table: MemTable::new(0),
             imm_mem_tables: Vec::new(),
             levels: Vec::new(),
-            mvcc_manager: Arc::new(MvccManager::new(0)),
         }
     }
 }
 
-impl StorageState {
+pub struct StorageManager {
+    pub state: Arc<RwLock<StorageState>>,
+    /// The MVCC manager.
+    pub mvcc_manager: Arc<MvccManager>,
+}
+
+impl StorageManager {
+    // pub fn get_with_ts(&self, key: &[u8], ts: u64) -> Option<Bytes> {
+    //     // let state = self.state.read();
+
+    //     todo!()
+    // }
+
     #[inline]
     pub fn mvcc_manager(&self) -> &MvccManager {
         self.mvcc_manager.as_ref()
