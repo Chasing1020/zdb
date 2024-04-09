@@ -9,10 +9,12 @@ use bytes::{BufMut, Bytes};
 
 use super::size::EstimateSize;
 
-pub const MAX_SEQUENCE_NUMBER: u64 = SeqNumber::MAX;
-pub const INTERAL_SUFFIX_LEN: usize = mem::size_of::<SeqNumber>();
+pub type Timestamp = u64;
 
-pub type SeqNumber = u64;
+pub const MIN_TS_NUM: Timestamp = Timestamp::MIN;
+pub const MAX_TS_NUM: Timestamp = Timestamp::MAX;
+pub const INTERAL_SUFFIX_LEN: usize = mem::size_of::<Timestamp>();
+
 pub type UserKeyRange = (Bound<UserKey<Bytes>>, Bound<UserKey<Bytes>>);
 pub type TableKeyRange = (Bound<TableKey<Bytes>>, Bound<TableKey<Bytes>>);
 pub type UserKeyRangeRef<'a> = (Bound<UserKey<&'a [u8]>>, Bound<UserKey<&'a [u8]>>);
@@ -117,7 +119,7 @@ impl EstimateSize for UserKey<Bytes> {
 #[derive(Clone, PartialEq, Eq, Hash, Default)]
 pub struct TableKey<T: AsRef<[u8]>> {
     pub user_key: UserKey<T>,
-    pub seq: SeqNumber,
+    pub ts: Timestamp,
 }
 
 impl<T: AsRef<[u8]>> Debug for TableKey<T> {
@@ -126,7 +128,7 @@ impl<T: AsRef<[u8]>> Debug for TableKey<T> {
             f,
             "TableKey: {:?}, Seq: {:?}",
             self.user_key.as_ref(),
-            self.seq
+            self.ts
         )
     }
 }
@@ -144,14 +146,14 @@ impl<T: AsRef<[u8]>> AsRef<[u8]> for TableKey<T> {
 }
 
 impl<T: AsRef<[u8]>> TableKey<T> {
-    pub fn new(user_key: UserKey<T>, seq: SeqNumber) -> TableKey<T> {
-        Self { user_key, seq }
+    pub fn new(user_key: UserKey<T>, seq: Timestamp) -> TableKey<T> {
+        Self { user_key, ts: seq }
     }
 
     /// Encode in to a buffer.
     pub fn encode_into(&self, buf: &mut impl BufMut) {
         self.user_key.encode_into(buf);
-        buf.put_u64(self.seq);
+        buf.put_u64(self.ts);
     }
 
     pub fn encode(&self) -> Vec<u8> {
@@ -170,16 +172,23 @@ impl<T: AsRef<[u8]>> TableKey<T> {
 }
 
 impl TableKey<Bytes> {
+    pub fn from_slice(slice: &[u8], seq: Timestamp) -> Self {
+        TableKey {
+            user_key: UserKey(Bytes::copy_from_slice(slice)),
+            ts: seq,
+        }
+    }
+
     pub fn from_bytes(buf: Bytes) -> Self {
         let seq = u64::from_le_bytes(buf[buf.len() - INTERAL_SUFFIX_LEN..].try_into().unwrap());
         TableKey {
             user_key: UserKey(buf.slice(0..buf.len() - INTERAL_SUFFIX_LEN)),
-            seq,
+            ts: seq,
         }
     }
 
     pub fn as_slice_key(&self) -> TableKey<&[u8]> {
-        TableKey::new(self.user_key.as_slice_key(), self.seq)
+        TableKey::new(self.user_key.as_slice_key(), self.ts)
     }
 }
 
@@ -188,28 +197,28 @@ impl<'a> TableKey<&'a [u8]> {
         let seq = u64::from_le_bytes(buf[buf.len() - INTERAL_SUFFIX_LEN..].try_into().unwrap());
         TableKey {
             user_key: UserKey(&buf[..buf.len() - INTERAL_SUFFIX_LEN]),
-            seq,
+            ts: seq,
         }
     }
 
     pub fn to_vec(self) -> TableKey<Vec<u8>> {
         TableKey {
             user_key: UserKey(self.user_key.0.to_vec()),
-            seq: self.seq,
+            ts: self.ts,
         }
     }
 
     pub fn to_bytes(self) -> TableKey<Bytes> {
         TableKey {
             user_key: UserKey(Bytes::copy_from_slice(self.user_key.0)),
-            seq: self.seq,
+            ts: self.ts,
         }
     }
 }
 
 impl<T: AsRef<[u8]>> TableKey<T> {
     pub fn as_ref(&self) -> TableKey<&[u8]> {
-        TableKey::new(UserKey(self.user_key.as_ref()), self.seq)
+        TableKey::new(UserKey(self.user_key.as_ref()), self.ts)
     }
 }
 
@@ -219,7 +228,7 @@ impl<T: AsRef<[u8]> + PartialOrd> PartialOrd for TableKey<T> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         self.user_key
             .partial_cmp(&other.user_key)
-            .or(other.seq.partial_cmp(&self.seq))
+            .or(other.ts.partial_cmp(&self.ts))
     }
 }
 
@@ -227,13 +236,13 @@ impl<T: AsRef<[u8]> + Ord> Ord for TableKey<T> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.user_key
             .cmp(&other.user_key)
-            .then(other.seq.cmp(&self.seq))
+            .then(other.ts.cmp(&self.ts))
     }
 }
 
 impl EstimateSize for TableKey<Bytes> {
     #[inline]
     fn estimated_heap_size(&self) -> usize {
-        self.user_key.estimated_heap_size() + mem::size_of::<SeqNumber>()
+        self.user_key.estimated_heap_size() + mem::size_of::<Timestamp>()
     }
 }

@@ -1,6 +1,9 @@
-use std::sync::Arc;
+use std::{ops::Bound, sync::Arc};
 
+use bytes::Bytes;
 use parking_lot::RwLock;
+
+use crate::db::format::key::TableKey;
 
 use super::{
     block::builder::{DEFAULT_BLOCK_CACHE_CAPACITY, DEFAULT_BLOCK_SIZE},
@@ -63,17 +66,28 @@ impl Default for StorageState {
 }
 
 pub struct StorageManager {
-    pub state: Arc<RwLock<StorageState>>,
+    pub state: Arc<RwLock<Arc<StorageState>>>,
     /// The MVCC manager.
     pub mvcc_manager: Arc<MvccManager>,
 }
 
 impl StorageManager {
-    // pub fn get_with_ts(&self, key: &[u8], ts: u64) -> Option<Bytes> {
-    //     // let state = self.state.read();
+    pub fn get_with_ts(&self, key: &[u8], ts: u64) -> Option<Bytes> {
+        let state = {
+            let guard = self.state.read();
+            Arc::clone(&guard)
+        };
 
-    //     todo!()
-    // }
+        // iterators for memtable and all immutable memtables
+        let mut memtable_iters = Vec::with_capacity(state.imm_mem_tables.len() + 1);
+
+        memtable_iters.push(Box::new(state.mem_table.scan((
+            Bound::Included(TableKey::from_slice(key, 0)),
+            Bound::Included(TableKey::from_slice(key, 0)),
+        ))));
+
+        todo!()
+    }
 
     #[inline]
     pub fn mvcc_manager(&self) -> &MvccManager {
