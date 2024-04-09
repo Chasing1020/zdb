@@ -1188,6 +1188,7 @@ dependencies = [
  "lz4",
  "moka",
  "ouroboros",
+ "parking_lot",
  "serde",
  "snap",
  "thiserror",
